@@ -1,0 +1,1275 @@
+<!DOCTYPE html>
+<!-- DGR Acceptance Tool
+     DGR (Dangerous Goods Regulations) acceptance checklist tool.
+     Supports standard IATA forms with and without Shipper's Declaration (DGD).
+     Generates filled PDF checklists and rejection documents.
+     100% offline — all data stored locally in the browser, no server required.
+     https://github.com/Brian24bcn/cargo-transport-tools
+-->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="description" content="Offline DGR acceptance checklist tool. Fills and exports standard IATA PDF inspection forms with and without Shipper's Declaration. No server required.">
+    <title>DGR Acceptance Tool</title>
+    <!-- pdf-lib: CDN (online) — para uso 100% offline descarga pdf-lib.min.js y cambia esta línea a ./pdf-lib.min.js -->
+    <script src="https://unpkg.com/pdf-lib/dist/pdf-lib.min.js"></script>
+    <!-- Favicon -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✈️</text></svg>">
+    <!-- PWA -->
+    <link rel="manifest" href="./manifest_dgr.json">
+    <meta name="theme-color" content="#003366">
+    <style>
+        /* CSS VARIABLES FOR THEMING */
+        :root {
+            --bg-body: #f4f7f6;
+            --bg-container: #ffffff;
+            --text-main: #333333;
+            --text-muted: #666666;
+            --accent-primary: #003366;
+            --accent-hover: #002244;
+            --bg-input: #ffffff;
+            --border-color: #cccccc;
+            --bg-upload: #e9ecef;
+            --border-upload: #adb5bd;
+            --bg-card: #fafafa;
+            --bg-module: #f8f9fa;
+            --bg-module-header: #e2e3e5;
+            --success-bg: #d4edda;
+            --success-border: #28a745;
+            --success-text: #155724;
+            --error-bg: #f8d7da;
+            --error-border: #dc3545;
+            --error-text: #721c24;
+            --na-bg: #e2e3e5;
+            --na-border: #6c757d;
+            --na-text: #383d41;
+            /* Aviation Route Background - Light */
+            --bg-pattern: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M10 10l40 40M50 10L10 50' stroke='%23003366' stroke-width='0.5' stroke-opacity='0.05' fill='none'/%3E%3Ccircle cx='10' cy='10' r='1.5' fill='%23003366' fill-opacity='0.1'/%3E%3Ccircle cx='50' cy='50' r='1.5' fill='%23003366' fill-opacity='0.1'/%3E%3C/svg%3E");
+        }
+
+        .dark-mode {
+            --bg-body: #0f172a;
+            --bg-container: #1e293b;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent-primary: #3b82f6;
+            --accent-hover: #2563eb;
+            --bg-input: #334155;
+            --border-color: #475569;
+            --bg-upload: #0f172a;
+            --border-upload: #334155;
+            --bg-card: #1e293b;
+            --bg-module: #0f172a;
+            --bg-module-header: #334155;
+            --success-bg: #064e3b;
+            --success-border: #10b981;
+            --success-text: #34d399;
+            --error-bg: #7f1d1d;
+            --error-border: #ef4444;
+            --error-text: #fca5a5;
+            --na-bg: #334155;
+            --na-border: #475569;
+            --na-text: #f8fafc;
+            /* Aviation Route Background - Dark */
+            --bg-pattern: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M10 10l40 40M50 10L10 50' stroke='%233b82f6' stroke-width='0.5' stroke-opacity='0.15' fill='none'/%3E%3Ccircle cx='10' cy='10' r='1.5' fill='%233b82f6' fill-opacity='0.2'/%3E%3Ccircle cx='50' cy='50' r='1.5' fill='%233b82f6' fill-opacity='0.2'/%3E%3C/svg%3E");
+        }
+
+        body { 
+            font-family: 'Segoe UI', Arial, sans-serif; 
+            margin: 0; padding: 15px; 
+            background-color: var(--bg-body); 
+            color: var(--text-main);
+            background-image: var(--bg-pattern);
+            background-size: cover;
+            background-attachment: fixed;
+            transition: background-color 0.3s, color 0.3s;
+        }
+        
+        .container { max-width: 750px; margin: auto; background: var(--bg-container); padding: 25px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); border: 1px solid var(--border-color); transition: background-color 0.3s;}
+        
+        /* TOP CONTROLS */
+        .top-controls { display: flex; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;}
+        .util-btn { background: var(--bg-input); color: var(--text-main); border: 1px solid var(--border-color); padding: 8px 15px; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.2s;}
+        .util-btn:hover { background: var(--accent-primary); color: white; border-color: var(--accent-primary); }
+        .reset-btn { background: var(--error-bg); color: var(--error-text); border-color: var(--error-border); }
+        .reset-btn:hover { background: var(--error-border); color: white; border-color: var(--error-border); }
+        
+        h1 { text-align: center; color: var(--text-main); font-size: 26px; margin: 0 0 5px 0;}
+        .subtitle { text-align: center; color: var(--text-muted); font-size: 14px; margin-bottom: 25px; }
+        
+        .airline-selector { background: var(--accent-primary); color: white; padding: 15px; border-radius: 8px; margin-bottom: 20px; text-align: center; }
+        .airline-selector select { width: 100%; max-width: 450px; padding: 10px; font-size: 16px; border-radius: 5px; margin-top: 10px; font-weight: bold; background: var(--bg-input); color: var(--text-main); border: 1px solid var(--border-color);}
+
+        .upload-box { background: var(--bg-upload); padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px dashed var(--border-upload); }
+        .form-group { margin-bottom: 15px; }
+        label { font-weight: bold; display: block; margin-bottom: 5px; color: var(--text-main); font-size: 14px;}
+        input[type="text"], input[type="number"], input[type="date"], input[type="time"], input[type="file"], textarea, select {
+            width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 5px; box-sizing: border-box; font-size: 15px;
+            background: var(--bg-input); color: var(--text-main);
+        }
+        input::placeholder, textarea::placeholder { color: var(--text-muted); }
+        textarea { resize: vertical; }
+
+        /* HYBRID SHIPPER SYSTEM */
+        .shipper-input-group { display: flex; gap: 8px; }
+        .shipper-input-group input { flex: 1; }
+        #btnSaveShipper { background: var(--success-border); color: white; border-color: var(--success-border); }
+        #btnSaveShipper:hover { background: var(--success-text); }
+
+        /* MODAL FOR SHIPPER MANAGEMENT */
+        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.7); display: none; justify-content: center; align-items: center; z-index: 10000; padding: 20px;}
+        .modal-content { background: var(--bg-container); padding: 20px; border-radius: 10px; width: 100%; max-width: 450px; border: 1px solid var(--border-color); box-shadow: 0 5px 25px rgba(0,0,0,0.5); display: flex; flex-direction: column; max-height: 80vh;}
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; }
+        .modal-header h3 { margin: 0; color: var(--text-main); font-size: 18px; }
+        .close-btn { background: none; border: none; font-size: 24px; color: var(--text-muted); cursor: pointer; padding: 0; line-height: 1; }
+        .shipper-list { flex: 1; overflow-y: auto; padding-right: 5px; }
+        .shipper-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 10px; border-bottom: 1px solid var(--border-color); color: var(--text-main); font-size: 15px;}
+        .shipper-item:last-child { border-bottom: none; }
+        .btn-trash { background: var(--error-bg); color: var(--error-text); border: 1px solid var(--error-border); border-radius: 5px; padding: 6px 12px; cursor: pointer; font-size: 14px; transition: 0.2s; font-weight: bold;}
+        .btn-trash:hover { background: var(--error-border); color: white; }
+
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        
+        .section-title { background: var(--accent-primary); color: white; padding: 10px; border-radius: 5px; margin-top: 25px; margin-bottom: 15px; font-size: 16px; font-weight: bold; text-transform: uppercase;}
+        .section-subtitle { font-weight: bold; color: var(--accent-primary); margin-top: 25px; margin-bottom: 10px; padding-bottom: 5px; border-bottom: 2px solid var(--border-color); font-size: 15px;}
+        
+        /* MODULES */
+        .module-block { background: var(--bg-module); border: 2px solid var(--border-color); border-radius: 8px; margin-bottom: 15px; overflow: hidden; }
+        .module-header { background: var(--bg-module-header); padding: 15px; font-weight: bold; font-size: 16px; display: flex; align-items: center; cursor: pointer; color: var(--text-main); }
+        .module-header input[type="checkbox"] { transform: scale(1.5); margin-right: 15px; cursor: pointer; }
+        .module-content { padding: 15px; display: none; background: var(--bg-container);}
+        .module-content.active { display: block; }
+        .module-general .module-header { background: var(--accent-primary); color: white; cursor: default;}
+        .module-general .module-content { display: block; }
+
+        .question-card { background: var(--bg-card); border: 1px solid var(--border-color); padding: 15px; border-radius: 8px; margin-bottom: 12px; transition: 0.3s; }
+        .question-text { font-size: 14px; font-weight: bold; margin-bottom: 10px; color: var(--text-main); line-height: 1.4; }
+        .error-border { border: 2px solid var(--error-border) !important; background-color: var(--error-bg) !important; }
+
+        .options { display: flex; gap: 8px; }
+        .options label { flex: 1; text-align: center; background: var(--bg-module-header); padding: 12px 5px; border-radius: 5px; cursor: pointer; border: 2px solid transparent; transition: 0.2s; font-weight: bold; font-size: 14px; -webkit-tap-highlight-color: transparent; color: var(--text-main);}
+        .options input[type="radio"] { display: none; }
+        
+        .options input[type="radio"][value="YES"]:checked + label, .options input[type="radio"][value="ACCEPTED"]:checked + label { background: var(--success-bg); border-color: var(--success-border); color: var(--success-text); }
+        .options input[type="radio"][value="NO"]:checked + label, .options input[type="radio"][value="REJECTED"]:checked + label { background: var(--error-bg); border-color: var(--error-border); color: var(--error-text); }
+        .options input[type="radio"][value="N/A"]:checked + label, .options input[type="radio"][value="NA"]:checked + label { background: var(--na-bg); border-color: var(--na-border); color: var(--na-text); }
+
+        /* REJECTION */
+        #rejectionSection { display: none; border: 2px solid var(--error-border); padding: 15px; border-radius: 8px; margin-bottom: 20px; background: var(--error-bg); }
+        .checkbox-group { margin-bottom: 10px; display: flex; align-items: center; font-size: 14px; color: var(--error-text); font-weight: bold;}
+        .checkbox-group input { margin-right: 10px; transform: scale(1.3); }
+
+        #photoPreview { display: flex; gap: 12px; margin-top: 10px; flex-wrap: wrap; }
+        .photo-wrapper { position: relative; display: inline-block; }
+        .thumb { width: 80px; height: 80px; object-fit: cover; border-radius: 5px; border: 1px solid var(--border-color); }
+        .remove-photo-btn { position: absolute; top: -5px; right: -5px; background: var(--error-border); color: white; border: none; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; font-size: 12px; display: flex; align-items: center; justify-content: center; font-weight: bold;}
+
+        /* FOOTER */
+        .btn-generate { background-color: var(--accent-primary); color: white; border: none; padding: 18px; width: 100%; font-size: 18px; font-weight: bold; border-radius: 5px; cursor: pointer; margin-top: 20px; transition: 0.3s;}
+        .btn-generate:hover { background-color: var(--accent-hover); }
+        .btn-clear { background: var(--na-border); color: white; border: none; padding: 10px; border-radius: 3px; cursor: pointer; margin-top: 5px; width: 100%; font-weight: bold; }
+        
+        #signatureContainer { border: 2px dashed var(--border-color); border-radius: 5px; background: #fff; margin-top: 10px; position: relative; }
+        canvas { width: 100%; height: 150px; display: block; touch-action: none; }
+
+        /* TOASTS */
+        #toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 10px; }
+        .toast { background: var(--bg-container); color: var(--text-main); padding: 15px 20px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.4); border-left: 5px solid var(--accent-primary); font-weight: bold; animation: slideIn 0.3s ease-out forwards; opacity: 0; transform: translateX(100%); }
+        .toast.error { border-left-color: var(--error-border); }
+        .toast.success { border-left-color: var(--success-border); }
+        @keyframes slideIn { to { opacity: 1; transform: translateX(0); } }
+        @keyframes fadeOut { to { opacity: 0; transform: translateX(100%); } }
+
+        /* ══════════════════════════════════════════════════════════
+           RESPONSIVE  —  Mobile & Tablet
+           El DGR ya es el más mobile-ready de los tres programas.
+           Estos ajustes corrigen los 7 detalles que faltaban.
+           Touch targets mínimos: 44 × 44 px (Apple HIG / WCAG 2.5.5)
+           ══════════════════════════════════════════════════════════ */
+
+        /* ── iOS: evita zoom al enfocar inputs (font-size estaba en 15px, 1px bajo el umbral) ── */
+        @supports (-webkit-touch-callout: none) {
+            input[type="text"], input[type="number"], input[type="date"],
+            input[type="time"], input[type="file"], textarea, select {
+                font-size: 16px !important;
+            }
+        }
+
+        @media (max-width: 600px) {
+            /* ── Página ── */
+            body { padding: 8px; }
+            .container { padding: 14px; border-radius: 8px; }
+
+            /* ── Título ── */
+            h1 { font-size: 20px; }
+            .subtitle { font-size: 13px; margin-bottom: 18px; }
+
+            /* ── Botones superiores: touch target 44px ── */
+            .util-btn { min-height: 44px; padding: 10px 14px; font-size: 13px; }
+
+            /* ── Inputs: 16px previene zoom iOS ── */
+            input[type="text"], input[type="number"], input[type="date"],
+            input[type="time"], textarea, select { font-size: 16px; padding: 12px; }
+
+            /* ── Grid 2 → columna única en móvil ── */
+            .grid-2 { grid-template-columns: 1fr; }
+
+            /* ── Shipper input + botón guardar: apila en pantallas pequeñas ── */
+            .shipper-input-group { flex-wrap: wrap; }
+            .shipper-input-group input { min-width: 0; }
+            #btnSaveShipper, .shipper-input-group .util-btn { min-height: 44px; }
+
+            /* ── Airline selector ── */
+            .airline-selector { padding: 12px; }
+            .airline-selector select { font-size: 16px; padding: 12px; }
+
+            /* ── Section & subtitles ── */
+            .section-title { font-size: 14px; padding: 8px 12px; margin-top: 18px; }
+            .section-subtitle { font-size: 14px; }
+
+            /* ── Module header ── */
+            .module-header { padding: 12px; font-size: 15px; }
+            .module-content { padding: 12px; }
+
+            /* ── Question cards ── */
+            .question-card { padding: 12px; margin-bottom: 10px; }
+            .question-text { font-size: 13px; }
+
+            /* ── YES / NO / N/A options — ya eran touch-friendly, pequeño ajuste ── */
+            .options label { padding: 14px 5px; font-size: 13px; }
+
+            /* ── Rejection section ── */
+            #rejectionSection { padding: 12px; }
+            .checkbox-group { min-height: 44px; padding: 4px 0; font-size: 13px; }
+            .checkbox-group input[type="checkbox"] {
+                width: 22px; height: 22px; min-width: 22px;
+                margin-right: 12px; cursor: pointer;
+            }
+
+            /* ── Photo preview ── */
+            .thumb { width: 70px; height: 70px; }
+            .remove-photo-btn { width: 26px; height: 26px; font-size: 14px; }
+
+            /* ── Signature clear button ── */
+            .btn-clear { min-height: 44px; padding: 12px; font-size: 15px; }
+
+            /* ── Generate button ── */
+            .btn-generate { padding: 20px; font-size: 17px; min-height: 56px; border-radius: 8px; }
+
+            /* ── Modal ── */
+            .modal-content { max-height: 90vh; padding: 15px; }
+            .modal-header h3 { font-size: 16px; }
+            .close-btn { min-width: 44px; min-height: 44px; font-size: 28px; }
+            .shipper-item { padding: 14px 10px; min-height: 44px; font-size: 14px; }
+            .btn-trash { min-height: 44px; padding: 10px 14px; font-size: 13px; }
+
+            /* ── Toast ── */
+            #toast-container { bottom: 10px; right: 8px; left: 8px; }
+            .toast { font-size: 13px; padding: 12px 16px; }
+        }
+
+        @media (max-width: 380px) {
+            h1 { font-size: 17px; }
+            .options label { font-size: 12px; padding: 12px 3px; }
+            .util-btn { font-size: 12px; padding: 8px 10px; }
+        }
+    </style>
+</head>
+<body>
+
+<div id="toast-container"></div>
+
+<div id="shipperModal" class="modal-overlay" onclick="closeShipperModal(event)">
+    <div class="modal-content" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h3 data-i18n="lblManageShippers">Manage Saved Shippers</h3>
+            <button class="close-btn" onclick="closeShipperModal()">&times;</button>
+        </div>
+        <div class="shipper-list" id="shipperModalList">
+            </div>
+    </div>
+</div>
+
+<div class="container">
+    <div class="top-controls">
+        <div>
+            <button class="util-btn" onclick="toggleTheme()" id="btnTheme">🌙 Dark Mode</button>
+        </div>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <button class="util-btn reset-btn" onclick="resetAppData()" id="btnReset" title="Permanently deletes shipper database and all settings">🗑️ Wipe All Saved Data</button>
+            <button class="util-btn" onclick="toggleLanguage()" id="btnLang">🌐 EN / DE</button>
+        </div>
+    </div>
+
+    <h1 data-i18n="appTitle">✈️ DGR Acceptance Tool</h1>
+    <div class="subtitle" data-i18n="appSubtitle">IATA Dangerous Goods Inspection Checklist</div>
+
+    <div class="airline-selector">
+        <label style="color: white; font-size: 16px;" data-i18n="lblChecklist">Select checklist type:</label>
+        <select id="airlineSelect" onchange="loadChecklist()">
+            <option value="NEUTRAL_WITH">✅ With Shipper's Declaration (DGD)</option>
+            <option value="NEUTRAL_WITHOUT">📋 Without Shipper's Declaration (Non-Radioactive)</option>
+        </select>
+    </div>
+
+    <div class="upload-box">
+        <div class="form-group">
+            <label id="lblPrimaryUpload" data-i18n="lblUploadPrim">1. Upload Primary Checklist PDF:</label>
+            <input type="file" id="pdfTemplate" accept="application/pdf">
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+            <label data-i18n="lblUploadSec">2. DGR Rejection Notice PDF (Used only if rejected):</label>
+            <input type="file" id="ablehnungTemplate" accept="application/pdf">
+        </div>
+    </div>
+
+    <div class="section-title" data-i18n="secGeneral">General Information</div>
+    <div class="grid-2">
+        <div class="form-group"><label data-i18n="lblAwb">Air Waybill No. (AWB):</label><input type="text" id="AWB_NUM" placeholder="e.g., 172-12345678"></div>
+        <div class="form-group"><label data-i18n="lblPieces">Number of Pieces:</label><input type="number" id="PIECES" placeholder="e.g., 5"></div>
+    </div>
+    
+    <div class="form-group">
+        <label data-i18n="lblShipper">Shipper Name / Company:</label>
+        <div class="shipper-input-group">
+            <input type="text" id="SHIPPER_INPUT" list="shipperList" placeholder="Select or type shipper name..." oninput="checkShipperStatus()">
+            <datalist id="shipperList"></datalist>
+            
+            <button class="util-btn" id="btnSaveShipper" onclick="saveCurrentShipper()" title="Save to Database" style="display: none;">💾 Save</button>
+            <button class="util-btn" onclick="openShipperModal()" title="Manage Shippers">⚙️ Manage</button>
+        </div>
+    </div>
+    
+    <div class="grid-2">
+        <div class="form-group"><label data-i18n="lblOrigin">Origin:</label><input type="text" id="ORIGIN" placeholder="e.g., FRA"></div>
+        <div class="form-group"><label data-i18n="lblDest">Destination:</label><input type="text" id="DESTINATION" placeholder="e.g., MIA"></div>
+    </div>
+    
+    <div class="grid-2">
+        <div class="form-group"><label data-i18n="lblDate">Date:</label><input type="date" id="DATE"></div>
+        <div class="form-group"><label data-i18n="lblTime">Time:</label><input type="time" id="TIME"></div>
+    </div>
+
+    <div class="form-group"><label data-i18n="lblInspector">Inspector Name:</label><input type="text" id="INSPECTOR_NAME" placeholder="e.g., John Doe"></div>
+    
+    <div class="grid-2">
+        <div class="form-group"><label data-i18n="lblDept">Department:</label><input type="text" id="DEPARTMENT" placeholder="e.g., Export"></div>
+        <div class="form-group"><label data-i18n="lblStation">Station / Location:</label><input type="text" id="LOCATION" placeholder="e.g., CITY (CODE)"></div>
+    </div>
+
+    <div class="section-title" id="checklistTitle" data-i18n="secChecklist">Checklist</div>
+    <div id="questionsContainer"></div>
+
+    <div id="rejectionSection">
+        <h3 data-i18n="lblRejectTitle" style="color: var(--error-border); margin-top:0; border-bottom: 1px solid var(--error-border); padding-bottom: 5px;">🛑 DGR REJECTION DETAILS</h3>
+        <p style="font-size: 13px; color: var(--error-text);" data-i18n="lblRejectHelp">A "NO" answer was detected. Please fill out these details to generate the Rejection document.</p>
+        
+        <div class="form-group">
+            <label style="color: var(--error-text);" data-i18n="lblReason">Reason for Rejection (Deficiency detected):</label>
+            <textarea id="REASON" rows="3" placeholder="e.g., UN number is missing on the outer packaging..."></textarea>
+        </div>
+        
+        <div class="form-group">
+            <label style="color: var(--error-text);" data-i18n="lblActions">Action Required (Check all that apply):</label>
+            <label class="checkbox-group"><input type="checkbox" id="chk_kontakt"> <span data-i18n="lblAction1">Please contact us to discuss the next steps</span></label>
+            <label class="checkbox-group"><input type="checkbox" id="chk_umbuchen"> <span data-i18n="lblAction2">Please rebook the shipment with the airline</span></label>
+            <label class="checkbox-group"><input type="checkbox" id="chk_fach"> <span data-i18n="lblAction3">AWB and rejection notice are in the document tray</span></label>
+            <label class="checkbox-group"><input type="checkbox" id="chk_anmerkungen"> <span data-i18n="lblAction4">Additional remarks</span></label>
+        </div>
+        <div class="form-group"><label style="color: var(--error-text);" data-i18n="lblAddComments">Additional Comments:</label><textarea id="ADD_COMMENTS" rows="2"></textarea></div>
+        <div class="form-group">
+            <label style="color: var(--error-text);" data-i18n="lblPhotoEvidence">📸 Visual Evidence (Max 2 photos per generated page):</label>
+            <input type="file" id="photosInput" accept="image/*" multiple>
+            <div id="photoPreview"></div>
+        </div>
+    </div>
+
+    <div class="section-title" data-i18n="secDecision">Final Decision & Signature</div>
+    <div class="question-card" id="decision_card">
+        <label style="text-align: center; font-size: 18px; margin-bottom:10px;" data-i18n="lblFinalDec">Final Shipment Decision:</label>
+        <div class="options">
+            <input type="radio" name="FINAL_DECISION" id="DECISION_ACCEPTED" value="ACCEPTED"><label for="DECISION_ACCEPTED">✅ ACCEPTED</label>
+            <input type="radio" name="FINAL_DECISION" id="DECISION_REJECTED" value="REJECTED"><label for="DECISION_REJECTED">❌ REJECTED</label>
+        </div>
+    </div>
+    <div class="form-group"><label data-i18n="lblChkComments">Checklist Comments:</label><textarea id="COMMENTS" rows="2"></textarea></div>
+    <div class="form-group">
+        <label data-i18n="lblSig">Inspector Signature:</label>
+        <div id="signatureContainer"><canvas id="signaturePad"></canvas></div>
+        <button class="btn-clear" onclick="clearSignature()" data-i18n="btnClear">Clear Signature</button>
+    </div>
+
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; margin-top:20px;">
+        <button onclick="newDocument()" style="background:none; border:1px solid var(--accent-secondary); color:var(--accent-secondary); padding:12px 24px; border-radius:5px; font-size:14px; cursor:pointer;" title="Clear current inspection — shipper database is kept">📄 New Inspection</button>
+        <button class="btn-generate" id="btnGenerate" onclick="generatePDF()" data-i18n="btnGen" style="margin-top:0; flex:1; min-width:200px;">Inject Data & Generate PDFs</button>
+    </div>
+</div>
+
+<script>
+    // ================= GLOBAL VARIABLES & STATE =================
+    let selectedPhotos = [];
+    let isRejectedGlobal = false;
+    let currentChecklistType = "STANDARD"; 
+    let currentPrefixes = [];
+    let currentLang = 'EN';
+
+    // ================= I18N SYSTEM =================
+    const i18n = {
+        EN: {
+            appTitle: "✈️ DGR Acceptance Tool", appSubtitle: "IATA Dangerous Goods Inspection Checklist",
+            lblChecklist: "Select checklist type:", lblUploadPrim: "1. Upload Checklist PDF Template:",
+            lblUploadSec: "2. DGR Rejection Notice PDF (Used only if rejected):", secGeneral: "General Information",
+            lblAwb: "Air Waybill No. (AWB):", lblPieces: "Number of Pieces:", lblShipper: "Shipper Name / Company:",
+            lblOrigin: "Origin:", lblDest: "Destination:", lblDate: "Date:", lblTime: "Time:",
+            lblInspector: "Inspector Name:", lblDept: "Department:", lblStation: "Station / Location:",
+            secChecklist: "Checklist", lblRejectHelp: "A 'NO' answer was detected. Please fill out details.",
+            lblRejectTitle: "🛑 DGR REJECTION DETAILS",
+            lblReason: "Reason for Rejection (Deficiency detected):", lblActions: "Action Required (Check all that apply):",
+            lblAction1: "Please contact us to discuss the next steps",
+            lblAction2: "Please rebook the shipment with the airline",
+            lblAction3: "AWB and rejection notice are in the document tray",
+            lblAction4: "Additional remarks",
+            lblAddComments: "Additional Comments:",
+            lblPhotoEvidence: "📸 Visual Evidence (Max 2 photos per generated page):",
+            secDecision: "Final Decision & Signature", lblFinalDec: "Final Shipment Decision:",
+            lblChkComments: "Checklist Comments:", lblSig: "Inspector Signature:", btnClear: "Clear Signature",
+            btnGen: "Inject Data & Generate PDFs", lblManageShippers: "Manage Saved Shippers",
+            btnReset: "🧹 Reset", confirmReset: "Are you sure you want to delete all saved shippers and reset the app?"
+        },
+        DE: {
+            appTitle: "✈️ DGR Annahme-Tool", appSubtitle: "IATA Gefahrgut-Prüfcheckliste",
+            lblChecklist: "Checklistentyp auswählen:", lblUploadPrim: "1. Checklisten-PDF-Vorlage hochladen:",
+            lblUploadSec: "2. DGR Ablehnung PDF (Nur bei Ablehnung):", secGeneral: "Allgemeine Informationen",
+            lblAwb: "Luftfrachtbrief (AWB):", lblPieces: "Stückzahl:", lblShipper: "Absender (Shipper):",
+            lblOrigin: "Herkunft (Origin):", lblDest: "Ziel (Destination):", lblDate: "Datum:", lblTime: "Uhrzeit:",
+            lblInspector: "Name des Prüfers:", lblDept: "Abteilung:", lblStation: "Station / Ort:",
+            secChecklist: "Checkliste", lblRejectHelp: "Ein 'NEIN' wurde erkannt. Bitte Details für das Ablehnungsdokument ausfüllen.",
+            lblRejectTitle: "🛑 DGR FAX ABLEHNUNG",
+            lblReason: "Ablehnungsgrund (Festgestellter Mangel):", lblActions: "Erforderliche Maßnahmen (Zutreffendes ankreuzen):",
+            lblAction1: "Bitte kontaktieren Sie uns um weiteres Vorgehen zu besprechen",
+            lblAction2: "Lassen Sie die Sendung bei der Airline umbuchen",
+            lblAction3: "AWB und Ablehnung liegen im Dokumentenfach",
+            lblAction4: "Zusätzliche Anmerkungen",
+            lblAddComments: "Zusätzliche Bemerkungen:",
+            lblPhotoEvidence: "📸 Fotodokumentation (Max. 2 Fotos pro generierter Seite):",
+            secDecision: "Endgültige Entscheidung & Unterschrift", lblFinalDec: "Sendungsentscheidung:",
+            lblChkComments: "Bemerkungen zur Checkliste:", lblSig: "Unterschrift des Prüfers:", btnClear: "Unterschrift löschen",
+            btnGen: "Daten einfügen & PDFs generieren", lblManageShippers: "Gespeicherte Absender verwalten",
+            btnReset: "🧹 Reset", confirmReset: "Sind Sie sicher, dass Sie alle gespeicherten Absender löschen und die App zurücksetzen möchten?"
+        }
+    };
+    
+    function toggleLanguage() {
+        currentLang = currentLang === 'EN' ? 'DE' : 'EN';
+        document.querySelectorAll('[data-i18n]').forEach(el => {
+            const key = el.getAttribute('data-i18n');
+            if (i18n[currentLang][key]) el.innerText = i18n[currentLang][key];
+        });
+        showToast(`Language switched to ${currentLang}`, 'success');
+    }
+
+    function toggleTheme() {
+        document.body.classList.toggle('dark-mode');
+        const isDark = document.body.classList.contains('dark-mode');
+        localStorage.setItem('dgr_theme', isDark ? 'dark' : 'light');
+        document.getElementById('btnTheme').innerText = isDark ? "☀️ Light Mode" : "🌙 Dark Mode";
+        resizeCanvas();
+    }
+
+    // Apply saved theme immediately on load
+    if (localStorage.getItem('dgr_theme') === 'dark') {
+        document.body.classList.add('dark-mode');
+        document.getElementById('btnTheme').innerText = "☀️ Light Mode";
+    }
+
+    // ================= TOAST SYSTEM =================
+    function showToast(message, type = 'info') {
+        const container = document.getElementById('toast-container');
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        toast.innerText = message;
+        container.appendChild(toast);
+        setTimeout(() => {
+            toast.style.animation = 'fadeOut 0.3s ease-in forwards';
+            setTimeout(() => toast.remove(), 300);
+        }, 4000);
+    }
+
+    // ================= TAB PROTECTION & RESET =================
+    window.addEventListener('beforeunload', function (e) {
+        if(document.getElementById('AWB_NUM').value.trim() !== "" || hasSignature) {
+            e.preventDefault();
+            e.returnValue = '';
+        }
+    });
+
+    function newDocument() {
+        // Limpia el formulario de inspección actual — NO borra el shipper database
+        ['AWB','PIECES','ORIGIN','DESTINATION','DATE','TIME',
+         'INSPECTOR_NAME','DEPARTMENT','LOCATION','REASON','ADD_COMMENTS'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+        document.getElementById('SHIPPER').value = '';
+        document.getElementById('btnSaveShipper').style.display = 'none';
+
+        // Resetear checklist
+        document.querySelectorAll('.checklist-section').forEach(s => s.remove());
+        document.querySelectorAll('input[type="radio"]').forEach(r => r.checked = false);
+
+        // Ocultar sección de rechazo
+        const rejSec = document.getElementById('rejectionSection');
+        if (rejSec) rejSec.style.display = 'none';
+        document.querySelectorAll('#chk_kontakt, #chk_umbuchen, #chk_fach, #chk_anmerkungen')
+            .forEach(cb => cb.checked = false);
+
+        // Limpiar fotos
+        photoFiles = [];
+        document.getElementById('photoPreview').innerHTML = '';
+
+        // Limpiar firma
+        const canvas = document.getElementById('sig_canvas') || document.getElementById('signatureCanvas');
+        if (canvas) { const ctx = canvas.getContext('2d'); ctx.clearRect(0, 0, canvas.width, canvas.height); }
+
+        // Recargar checklist limpio
+        loadChecklist();
+        const now = new Date();
+        document.getElementById('DATE').value = now.toISOString().split('T')[0];
+        document.getElementById('TIME').value = now.toTimeString().substring(0,5);
+
+        showToast('📄 New inspection — shipper database kept');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function resetAppData() {
+        const confirmMsg = "⚠️ WIPE ALL SAVED DATA\n\nThis will permanently delete:\n• Shipper database\n• All saved settings and preferences\n\nThe current inspection form will also be cleared.\nThis cannot be undone. Continue?";
+        if (confirm(confirmMsg)) {
+            localStorage.removeItem('dgr_shippers');
+            window.onbeforeunload = null; // Remove tab protection for the reload
+            location.reload();
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // CONFIGURATION — Add your default shippers/forwarders here.
+    // These are loaded once on first launch and saved to LocalStorage.
+    // After that, manage shippers via the ⚙️ Manage button in the UI.
+    // ─────────────────────────────────────────────────────────────────────────
+    const CONFIG = {
+        defaultShippers: [
+            // "CEVA Logistics",
+            // "DHL Supply Chain & Global Forwarding",
+            // "Kuehne + Nagel",
+        ],
+        defaultDepartment: "",   // e.g., "Export" or "DGR Acceptance"
+        defaultLocation:   "",   // e.g., "FRA" or "FRANKFURT (FRA)"
+    };
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // ================= COMBOBOX & SHIPPER MANAGEMENT SYSTEM =================
+    function loadAddresses() {
+        let saved = localStorage.getItem('dgr_shippers');
+        if (!saved) {
+            saved = JSON.stringify(CONFIG.defaultShippers);
+            localStorage.setItem('dgr_shippers', saved);
+        }
+        const parsedAddresses = JSON.parse(saved).sort();
+        renderShipperDatalist(parsedAddresses);
+        renderShipperModalList(parsedAddresses);
+    }
+
+    function renderShipperDatalist(addresses) {
+        const datalist = document.getElementById('shipperList');
+        datalist.innerHTML = '';
+        addresses.forEach(addr => {
+            const opt = document.createElement('option');
+            opt.value = addr;
+            datalist.appendChild(opt);
+        });
+    }
+
+    function checkShipperStatus() {
+        const inputVal = document.getElementById('SHIPPER_INPUT').value.trim();
+        const btnSave = document.getElementById('btnSaveShipper');
+        
+        if (!inputVal) {
+            btnSave.style.display = 'none';
+            return;
+        }
+
+        const addresses = JSON.parse(localStorage.getItem('dgr_shippers') || '[]');
+        if (addresses.includes(inputVal)) {
+            btnSave.style.display = 'none';
+        } else {
+            btnSave.style.display = 'inline-block';
+        }
+    }
+
+    function saveCurrentShipper() {
+        const inputVal = document.getElementById('SHIPPER_INPUT').value.trim();
+        if (!inputVal) return;
+        
+        let addresses = JSON.parse(localStorage.getItem('dgr_shippers') || '[]');
+        if (!addresses.includes(inputVal)) {
+            addresses.push(inputVal);
+            addresses.sort();
+            localStorage.setItem('dgr_shippers', JSON.stringify(addresses));
+            renderShipperDatalist(addresses);
+            renderShipperModalList(addresses);
+            showToast("Shipper saved to database!", "success");
+            document.getElementById('btnSaveShipper').style.display = 'none';
+        }
+    }
+
+    function openShipperModal() {
+        document.getElementById('shipperModal').style.display = 'flex';
+    }
+
+    function closeShipperModal(e) {
+        if (e && e.target !== e.currentTarget) return; 
+        document.getElementById('shipperModal').style.display = 'none';
+    }
+
+    function renderShipperModalList(addresses) {
+        const modalList = document.getElementById('shipperModalList');
+        modalList.innerHTML = '';
+        
+        if (addresses.length === 0) {
+            modalList.innerHTML = `<div class="shipper-item" style="justify-content:center; color: var(--text-muted);">No shippers saved.</div>`;
+            return;
+        }
+
+        addresses.forEach(addr => {
+            const div = document.createElement('div');
+            div.className = 'shipper-item';
+            div.innerHTML = `
+                <span>${addr}</span>
+                <button class="btn-trash" onclick="deleteShipper('${addr.replace(/'/g, "\\'")}')" title="Delete">🗑️ Delete</button>
+            `;
+            modalList.appendChild(div);
+        });
+    }
+
+    function deleteShipper(shipperName) {
+        let addresses = JSON.parse(localStorage.getItem('dgr_shippers') || '[]');
+        addresses = addresses.filter(a => a !== shipperName);
+        localStorage.setItem('dgr_shippers', JSON.stringify(addresses));
+        
+        renderShipperDatalist(addresses);
+        renderShipperModalList(addresses);
+        checkShipperStatus();
+        showToast(`Shipper deleted.`, "success");
+    }
+
+    // ================= FULL IATA DATABASE =================
+    const modularBlocksWithoutDGD = [
+        {
+            id: "ICE", title: "Dry Ice (ICE)", prefix: "ICE", isOptional: true,
+            questions: [
+                { id: "Q1", text: `1. 'UN1845' and 'Dry Ice' or 'Carbon dioxide, solid'`, options: ["YES", "NO"] },
+                { id: "Q2", text: `2. For mixed shipments: Number of packages`, options: ["YES", "NO", "NA"] },
+                { id: "Q3", text: `3. The net quantity of UN1845 per package and within limits; or ULD ID and net quantity if Dry Ice placed in ULD [4.2 / PI954]`, options: ["YES", "NO"] },
+                { id: "Q4", text: `4. Same number of ICE packages as shown on AWB`, options: ["YES", "NO"] },
+                { id: "Q5", text: `5. Package(s) comply with PI954 and permit the release of gas`, options: ["YES", "NO"] },
+                { id: "Q6", text: `6. 'UN1845' and 'Dry Ice' or 'Carbon dioxide, solid' [7.1.4.1(a)]`, options: ["YES", "NO"] },
+                { id: "Q7", text: `7. Full name and address of shipper and consignee`, options: ["YES", "NO"] },
+                { id: "Q8", text: `8. Net quantity of UN1845 within each package`, options: ["YES", "NO"] },
+                { id: "Q9", text: `9. Class 9 label correctly displayed on package(s)`, options: ["YES", "NO"] },
+                { id: "Q10", text: `10. Overpack in addition marked with word 'overpack'`, options: ["YES", "NO", "NA"] },
+                { id: "Q11", text: `11. Total net quantity of UN1845 shown in overpack, if overpack used [7.1.7.1.1]`, options: ["YES", "NO", "NA"] },
+                { id: "Q12", text: `12. For ULDs containing Dry Ice: All hazard labels and dangerous goods marks removed from ULD`, options: ["YES", "NO", "NA"] }
+            ]
+        },
+        {
+            id: "REQ", title: "Dangerous Goods in Excepted Quantities (REQ)", prefix: "REQ", isOptional: true,
+            questions: [
+                { id: "Q1", text: `1. 'Dangerous Goods in Excepted Quantities'`, options: ["YES", "NO"] },
+                { id: "Q2", text: `2. For mixed shipments: Number of packages`, options: ["YES", "NO", "NA"] },
+                { id: "Q3", text: `3. Same number of REQ package(s) as shown on AWB`, options: ["YES", "NO"] },
+                { id: "Q4", text: `4. Excepted Quantity Package Mark`, options: ["YES", "NO"] },
+                { id: "Q5", text: `5. Primary hazard class or division number(s) entered on the mark`, options: ["YES", "NO"] },
+                { id: "Q6", text: `6. Name of shipper or consignee on mark or on package`, options: ["YES", "NO"] },
+                { id: "Q7", text: `7. Overpack in addition marked with word 'overpack'`, options: ["YES", "NO", "NA"] }
+            ]
+        },
+        {
+            id: "RRE", title: "Radioactive Material, Excepted Packages (RRE)", prefix: "RRE", isOptional: true,
+            questions: [
+                { id: "Q1", text: `1. UN number and Proper Shipping Name`, options: ["YES", "NO"] },
+                { id: "Q2", text: `2. For mixed shipments: Number of packages`, options: ["YES", "NO", "NA"] },
+                { id: "Q3", text: `3. Same number of RRE package(s) as shown on AWB`, options: ["YES", "NO"] },
+                { id: "Q4", text: `4. UN number`, options: ["YES", "NO"] },
+                { id: "Q5", text: `5. Full name/adress of shipper and consignee`, options: ["YES", "NO"] },
+                { id: "Q6", text: `6. Permissible gross weight, if it exceeds 50 kg`, options: ["YES", "NO", "NA"] },
+                { id: "Q7", text: `7. 'Radioactive Material, Excepted Package' Label`, options: ["YES", "NO"] },
+                { id: "Q8", text: `8. Overpack in addition marked with word 'overpack'`, options: ["YES", "NO", "NA"] }
+            ]
+        },
+        {
+            id: "PI208A", title: "Articles under PI 208a (PI208A)", prefix: "PI208A", isOptional: true,
+            questions: [
+                { id: "Q1", text: `1. 'UN3164' and 'Articles, pressurized, hydraulic' or 'Articles, pressurized, pneumatic'`, options: ["YES", "NO"] },
+                { id: "Q2", text: `2. For mixed shipments: Number of packages`, options: ["YES", "NO", "NA"] }
+            ]
+        },
+        {
+            id: "ELI", title: "Sodium Ion / Lithium Batteries in Section II (ELI/ELM)", prefix: "ELI", isOptional: true,
+            questions: [
+                { id: "Q1", text: `1. Air Waybill shows either:<br><span style='font-weight:normal; font-size:13px;'>a. Lithium ion batteries in compliance with section II of PI 966<br>b. Lithium ion batteries in compliance with section II of PI 967<br>c. Lithium metal batteries in compliance with section II of PI 969<br>d. Lithium metal batteries in compliance with section II of PI 970<br>e. Sodium ion batteries in compliance with section II of PI 977<br>f. Sodium ion batteries in compliance with section II of PI 978<br><br>* For mixed battery shipments a combined compliance statement may be used.</span>`, options: ["YES", "NO"] },
+                { id: "Q2", text: `2. Package(s) comply with applicable PI and DGR 5.0.2`, options: ["YES", "NO"] },
+                { id: "Q3", text: `3. Completed battery mark [Figure 7.1.C]`, options: ["YES", "NO"] },
+                { id: "Q4", text: `4. Overpack in addition marked with word 'overpack'`, options: ["YES", "NO", "NA"] }
+            ]
+        },
+        {
+            id: "RDS", title: "Biological Substance, Category B (RDS)", prefix: "RDS", isOptional: true,
+            questions: [
+                { id: "Q1", text: `1. Name and telephone number of a responsible person on AWB or package`, options: ["YES", "NO"] },
+                { id: "Q2", text: `2. 'UN3373' and 'Biological Substance, Category B'`, options: ["YES", "NO"] },
+                { id: "Q3", text: `3. For mixed shipments: Number of packages`, options: ["YES", "NO", "NA"] },
+                { id: "Q4", text: `4. Package(s) comply with PI650`, options: ["YES", "NO"] },
+                { id: "Q5", text: `5. Same number of RDS packages as shown on AWB`, options: ["YES", "NO"] },
+                { id: "Q6", text: `6. 'Biological Substance, Category B'`, options: ["YES", "NO"] },
+                { id: "Q7", text: `7. Diamond mark UN3373`, options: ["YES", "NO"] },
+                { id: "Q8", text: `8. Name and address of shipper & consignee`, options: ["YES", "NO"] },
+                { id: "Q9", text: `9. Overpack in addition marked with word 'overpack'`, options: ["YES", "NO", "NA"] }
+            ]
+        },
+        {
+            id: "MAG", title: "Magnetized Material (MAG)", prefix: "MAG", isOptional: true,
+            questions: [
+                { id: "Q1", text: `1. 'Magnetized Material'`, options: ["YES", "NO"] },
+                { id: "Q2", text: `2. For mixed shipments: Number of packages`, options: ["YES", "NO", "NA"] },
+                { id: "Q3", text: `3. Same number of MAG packages as shown on AWB`, options: ["YES", "NO"] },
+                { id: "Q4", text: `4. 'Magnetized Material' Label`, options: ["YES", "NO"] }
+            ]
+        },
+        {
+            id: "GMMO", title: "Genetically Modified Micro-Organisms (GMMO/GMO)", prefix: "GMMO", isOptional: true,
+            questions: [
+                { id: "Q1", text: `1. 'UN3245 GMMO' or 'UN3245 GMO'`, options: ["YES", "NO"] },
+                { id: "Q2", text: `2. For mixed shipments: Number of packages`, options: ["YES", "NO", "NA"] },
+                { id: "Q3", text: `3. Package(s) comply with PI959`, options: ["YES", "NO"] },
+                { id: "Q4", text: `4. Same number of GMMO / GMO package(s) as shown on AWB`, options: ["YES", "NO"] },
+                { id: "Q5", text: `5. Diamond mark UN3245`, options: ["YES", "NO"] },
+                { id: "Q6", text: `6. Full name and address of shipper and consignee`, options: ["YES", "NO"] },
+                { id: "Q7", text: `7. Overpack in addition marked with word 'overpack'`, options: ["YES", "NO", "NA"] }
+            ]
+        },
+        {
+            id: "GENERAL", title: "General for all shipments", prefix: "GENERAL", isOptional: false,
+            questions: [
+                { id: "Q1", text: `1. Package(s) free of damage and ready for carriage`, options: ["YES", "NO"] },
+                { id: "Q2", text: `2. All irrelevant marks and labels removed or obliterated`, options: ["YES", "NO", "NA"] },
+                { id: "Q3", text: `3. State and operator variations checked and complied with [2.8]`, options: ["YES", "NO"] },
+                { id: "Q4", text: `4. Embargoes / restrictions checked and complied with`, options: ["YES", "NO"] },
+                { id: "Q5", text: `5. Booking correct and confirmed. If not, ensure correct booking.`, options: ["YES"] }
+            ]
+        }
+    ];
+
+    const database = {
+        "NEUTRAL_WITH": {
+            title: "Checklist — With Shipper's Declaration (DGD)", type: "STANDARD",
+            questions: [
+                { id: "Q1", text: `1. Two copies in English and in the IATA format`, options: ["YES", "NO"] },
+                { id: "Q2", text: `2. Full name and address of Shipper and Consignee`, options: ["YES", "NO"] },
+                { id: "Q3", text: `3. The number of pages shown`, options: ["YES", "NO"] },
+                { id: "Q4", text: `4. If the Air Waybill number, full name of Airport or City of Departure or Destination is not shown, enter it`, options: ["YES"] },
+                { id: "Q5", text: `5. The non-applicable Aircraft Type deleted or not shown`, options: ["YES", "NO"] },
+                { id: "Q6", text: `6. The word 'Radioactive' deleted or not shown`, options: ["YES", "NO"] },
+                { id: "Q7", text: `7. UN or ID Number(s), preceded by prefix`, options: ["YES", "NO"] },
+                { id: "Q8", text: `8. Proper Shipping Name(s) and the technical name in brackets for entries with ★`, options: ["YES", "NO"] },
+                { id: "Q9", text: `9. Class or Division, and for Class 1, the Compatibility Group`, options: ["YES", "NO"] },
+                { id: "Q10", text: `10. Subsidiary Hazard, in brackets, immediately following Class or Division`, options: ["YES", "NO", "NA"] },
+                { id: "Q11", text: `11. Packing Group`, options: ["YES", "NO", "NA"] },
+                { id: "Q12", text: `12. Number and Type of Packages`, options: ["YES", "NO"] },
+                { id: "Q13", text: `13. Quantity and unit of measure within package limit`, options: ["YES", "NO"] },
+                { id: "Q14", text: `14. For Class 1, the net quantity supplemented with the net explosive mass`, options: ["YES", "NO", "NA"] },
+                { id: "Q15_HEADER", text: `15. When different dangerous goods are packed in one outer packaging:` },
+                { id: "Q15a", text: `a. Compatible according to Table 9.3.A`, options: ["YES", "NO", "NA"] },
+                { id: "Q15b", text: `b. Conditions met for UN packages containing Division 6.2`, options: ["YES", "NO", "NA"] },
+                { id: "Q15c", text: `c. Wording 'All packed in one (type of packaging)'`, options: ["YES", "NO", "NA"] },
+                { id: "Q15d", text: `d. 'Q' value, rounded up and not exceeding 1`, options: ["YES", "NO", "NA"] },
+                { id: "Q16_HEADER", text: `16. Overpack` },
+                { id: "Q16a", text: `a. Compatible according to Table 9.3.A`, options: ["YES", "NO", "NA"] },
+                { id: "Q16b", text: `b. Wording 'Overpack Used'`, options: ["YES", "NO", "NA"] },
+                { id: "Q16c", text: `c. Identification marks and total quantity shown, if applicable`, options: ["YES", "NO", "NA"] },
+                { id: "Q17", text: `17. Packing Instruction Number`, options: ["YES", "NO"] },
+                { id: "Q18", text: `18. Check all verifiable special provisions Number shown if A1, A2, A4, A5, A51, A81, A88, A99, A130, A176, A190, A191, A201, A202, A211, A212, A224, A225, A331 or A334`, options: ["YES", "NO", "NA"] },
+                { id: "Q19", text: `19. Indication that governmental authorization and/or additional approvals are attached (including a copy in English, if required)`, options: ["YES", "NO", "NA"] },
+                { id: "Q20", text: `20. Statement for self-reactive substances of Div 4.1 or organic peroxides of Division 5.2 or samples thereof or PBE or infectious and controlled substances or fireworks or viscous flammable liquids`, options: ["YES", "NO", "NA"] },
+                { id: "Q21", text: `21. Name of Signatory and Date indicated and Signature`, options: ["YES", "NO"] },
+                { id: "Q22", text: `22. Amendment(s) or alteration(s) signed by Shipper`, options: ["YES", "NO", "NA"] },
+                { id: "Q23", text: `23. 'Dangerous goods as per associated Shipper’s Declaration' or 'Dangerous goods as per associated DGD'`, options: ["YES", "NO"] },
+                { id: "Q24", text: `24. 'Cargo Aircraft Only' or 'CAO', if applicable`, options: ["YES", "NO", "NA"] },
+                { id: "Q25", text: `25. For mixed shipment(s): number of packages containing dangerous goods`, options: ["YES", "NO", "NA"] },
+                { id: "Q26", text: `26. Packaging conforms with packing instruction and is free from damage or leakage`, options: ["YES", "NO"] },
+                { id: "Q27", text: `27. Same number of packages and type of packagings and overpacks delivered as shown on DGD`, options: ["YES", "NO"] },
+                { id: "Q28", text: `28. UN or ID Number(s), preceded by prefix`, options: ["YES", "NO"] },
+                { id: "Q29", text: `29. Proper Shipping Name(s) including technical name`, options: ["YES", "NO"] },
+                { id: "Q30", text: `30. Full name and address of Shipper and Consignee`, options: ["YES", "NO"] },
+                { id: "Q31", text: `31. The net quantity or gross weight followed by 'G'`, options: ["YES", "NO", "NA"] },
+                { id: "Q32", text: `32. Name/Phone no. of a responsible person for Div 6.2`, options: ["YES", "NO", "NA"] },
+                { id: "Q33", text: `33. The Special Marking requirements shown for PI202`, options: ["YES", "NO", "NA"] },
+                { id: "Q34", text: `34. Limited Quantity mark for ID8000`, options: ["YES", "NO", "NA"] },
+                { id: "Q35", text: `35. The Environmentally Hazardous Substance Mark`, options: ["YES", "NO", "NA"] },
+                { id: "Q36", text: `36. Battery mark, if applicable`, options: ["YES", "NO", "NA"] },
+                { id: "Q37_HEADER", text: `37. UN Specification Packaging only:` },
+                { id: "Q37a", text: `a. Symbol and Specification Code`, options: ["YES", "NO", "NA"] },
+                { id: "Q37b", text: `b. X, Y or Z meets or exceeds PG / PI requirements`, options: ["YES", "NO", "NA"] },
+                { id: "Q37c", text: `c. Gross Weight within limits`, options: ["YES", "NO", "NA"] },
+                { id: "Q37d", text: `d. Infectious substance package mark`, options: ["YES", "NO", "NA"] },
+                { id: "Q37e", text: `e. Plastic drums, jerricans and IBCs within permitted period`, options: ["YES", "NO", "NA"] },
+                { id: "Q38", text: `38. The label(s) identifying the Primary Hazard`, options: ["YES", "NO"] },
+                { id: "Q39", text: `39. The label(s) identifying the Subsidiary Hazard`, options: ["YES", "NO", "NA"] },
+                { id: "Q40", text: `40. 'CAO' label(s), on the same surface near Hazard label`, options: ["YES", "NO", "NA"] },
+                { id: "Q41", text: `41. 'Orientation' labels on two opposite sides`, options: ["YES", "NO", "NA"] },
+                { id: "Q42", text: `42. 'Cryogenic Liquid' label(s), if applicable`, options: ["YES", "NO", "NA"] },
+                { id: "Q43", text: `43. 'Keep Away From Heat' label(s), if applicable`, options: ["YES", "NO", "NA"] },
+                { id: "Q44", text: `44. All required labels correctly displayed and irrelevant marks removed`, options: ["YES", "NO"] },
+                { id: "Q45", text: `45. Packaging use marks and hazard and handling labels, as required must be clearly visible or reproduced on the outside of the overpack`, options: ["YES", "NO", "NA"] },
+                { id: "Q46", text: `46. The word 'Overpack' marked if all marks/labels not completely visible`, options: ["YES", "NO", "NA"] },
+                { id: "Q47", text: `47. If more than one overpack is used, identification marks shown and total quantity of dangerous goods`, options: ["YES", "NO", "NA"] },
+                { id: "Q48", text: `48. State and Operator variations checked and complied with`, options: ["YES", "NO"] },
+                { id: "Q49", text: `49. Embargoes/Restrictions checked and complied with`, options: ["YES", "NO"] },
+                { id: "Q50", text: `50. Booking correct and confirmed. If not ensure correct booking.`, options: ["YES"] },
+                { id: "Q51", text: `51. 'Cargo Aircraft Only' shipments, a cargo aircraft operates on all sectors`, options: ["YES", "NO", "NA"] }
+            ]
+        },
+        "NEUTRAL_WITHOUT": { title: "Neutral Form - WITHOUT DGD", type: "MODULAR", blocks: modularBlocksWithoutDGD }
+    };
+
+
+    // ================= INIT & LOAD =================
+    window.onload = function() {
+        loadAddresses();
+        loadChecklist();
+        const now = new Date();
+        document.getElementById('DATE').value = now.toISOString().split('T')[0];
+        document.getElementById('TIME').value = now.toTimeString().split(' ')[0].substring(0,5);
+
+        // Apply CONFIG defaults (only when the field is empty)
+        if (CONFIG.defaultDepartment && !document.getElementById('DEPARTMENT').value)
+            document.getElementById('DEPARTMENT').value = CONFIG.defaultDepartment;
+        if (CONFIG.defaultLocation && !document.getElementById('LOCATION').value)
+            document.getElementById('LOCATION').value = CONFIG.defaultLocation;
+
+        resizeCanvas();
+    };
+
+    function loadChecklist() {
+        const selection = document.getElementById('airlineSelect').value;
+        const data = database[selection];
+        const container = document.getElementById('questionsContainer');
+        container.innerHTML = ""; 
+        currentPrefixes = [];
+
+        document.getElementById('lblPrimaryUpload').innerText = `1. Upload Primary PDF (${data.title}):`;
+        currentChecklistType = data.type;
+
+        if (data.type === "STANDARD") {
+            data.questions.forEach(q => {
+                if (q.options) {
+                    let optionsHtml = '';
+                    q.options.forEach(opt => {
+                        optionsHtml += `<input type="radio" name="${q.id}" id="${q.id}_${opt.replace('/','')}" value="${opt}"><label for="${q.id}_${opt.replace('/','')}">${opt}</label>`;
+                    });
+                    container.innerHTML += `
+                        <div class="question-card" id="card_${q.id}">
+                            <div class="question-text">${q.text}</div>
+                            <div class="options">${optionsHtml}</div>
+                        </div>`;
+                } else {
+                    container.innerHTML += `<div class="section-subtitle">${q.text}</div>`;
+                }
+            });
+        } 
+        else if (data.type === "MODULAR") {
+            data.blocks.forEach(block => {
+                let blockHtml = `<div class="module-block ${block.isOptional ? '' : 'module-general'}">`;
+                
+                if (block.isOptional) {
+                    blockHtml += `<div class="module-header" onclick="toggleBlock('${block.id}')">
+                                    <input type="checkbox" id="chk_${block.id}" onclick="event.stopPropagation(); toggleBlock('${block.id}')">
+                                    Declare ${block.title}
+                                  </div>`;
+                } else {
+                    blockHtml += `<div class="module-header">${block.title} (Mandatory)</div>`;
+                    currentPrefixes.push(block.prefix);
+                }
+
+                blockHtml += `<div class="module-content" id="content_${block.id}">`;
+                
+                block.questions.forEach(q => {
+                    const uniqueId = `${block.prefix}_${q.id}`;
+                    if (q.options) {
+                        let optionsHtml = '';
+                        q.options.forEach(opt => {
+                            optionsHtml += `<input type="radio" name="${uniqueId}" id="${uniqueId}_${opt.replace('/','')}" value="${opt}"><label for="${uniqueId}_${opt.replace('/','')}">${opt}</label>`;
+                        });
+                        blockHtml += `
+                            <div class="question-card" id="card_${uniqueId}">
+                                <div class="question-text">${q.text}</div>
+                                <div class="options">${optionsHtml}</div>
+                            </div>`;
+                    } else {
+                        blockHtml += `<div class="section-subtitle">${q.text}</div>`;
+                    }
+                });
+
+                blockHtml += `</div></div>`;
+                container.innerHTML += blockHtml;
+            });
+        }
+
+        document.querySelectorAll('input[type="radio"]').forEach(radio => {
+            radio.addEventListener('change', checkRejectionStatus);
+        });
+        checkRejectionStatus(); 
+    }
+
+    function toggleBlock(blockId) {
+        const checkbox = document.getElementById(`chk_${blockId}`);
+        const content = document.getElementById(`content_${blockId}`);
+        const prefix = database["NEUTRAL_WITHOUT"].blocks.find(b => b.id === blockId).prefix;
+
+        if (checkbox.checked) {
+            content.classList.add('active');
+            if(!currentPrefixes.includes(prefix)) currentPrefixes.push(prefix);
+        } else {
+            content.classList.remove('active');
+            currentPrefixes = currentPrefixes.filter(p => p !== prefix);
+            const radios = content.querySelectorAll('input[type="radio"]');
+            radios.forEach(r => r.checked = false);
+        }
+        checkRejectionStatus(); 
+    }
+
+    function checkRejectionStatus() {
+        const activeNos = Array.from(document.querySelectorAll('.options input[type="radio"][value="NO"]:checked'))
+            .filter(radio => radio.closest('.module-content') ? radio.closest('.module-content').classList.contains('active') || radio.closest('.module-general') : true);
+
+        const rejectionSection = document.getElementById('rejectionSection');
+        
+        if (activeNos.length > 0) {
+            rejectionSection.style.display = 'block';
+            document.getElementById('DECISION_REJECTED').checked = true;
+            isRejectedGlobal = true;
+        } else {
+            rejectionSection.style.display = 'none';
+            document.getElementById('DECISION_ACCEPTED').checked = true;
+            isRejectedGlobal = false;
+        }
+        document.querySelectorAll('.error-border').forEach(el => el.classList.remove('error-border'));
+    }
+
+    // ================= PHOTOS & PREVIEW =================
+    document.getElementById('photosInput').addEventListener('change', function(e) {
+        selectedPhotos = selectedPhotos.concat(Array.from(e.target.files)); 
+        updatePhotoPreview();
+    });
+
+    function updatePhotoPreview() {
+        const preview = document.getElementById('photoPreview');
+        preview.innerHTML = '';
+        selectedPhotos.forEach((file, index) => {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'photo-wrapper';
+            const img = document.createElement('img');
+            img.className = 'thumb';
+            img.src = URL.createObjectURL(file);
+            const removeBtn = document.createElement('button');
+            removeBtn.innerHTML = 'X'; removeBtn.className = 'remove-photo-btn';
+            removeBtn.onclick = function() { selectedPhotos.splice(index, 1); updatePhotoPreview(); };
+            wrapper.appendChild(img); wrapper.appendChild(removeBtn); preview.appendChild(wrapper);
+        });
+        document.getElementById('photosInput').value = '';
+    }
+
+    // ================= SIGNATURE CANVAS =================
+    const canvas = document.getElementById('signaturePad');
+    const ctx = canvas.getContext('2d');
+    let isDrawing = false; let hasSignature = false;
+
+    function resizeCanvas() {
+        const rect = canvas.parentElement.getBoundingClientRect();
+        canvas.width = rect.width; canvas.height = 150;
+        ctx.lineWidth = 2; ctx.lineCap = 'round'; 
+        ctx.strokeStyle = '#000000'; // Always black ink for PDF
+        ctx.fillStyle = '#ffffff'; // Fill white so PNG embeds properly
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+    function getPos(e) {
+        const rect = canvas.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        return { x: clientX - rect.left, y: clientY - rect.top };
+    }
+    canvas.addEventListener('mousedown', (e) => { isDrawing = true; hasSignature = true; ctx.beginPath(); ctx.moveTo(getPos(e).x, getPos(e).y); });
+    canvas.addEventListener('mousemove', (e) => { if(isDrawing) { ctx.lineTo(getPos(e).x, getPos(e).y); ctx.stroke(); } });
+    canvas.addEventListener('mouseup', () => { isDrawing = false; });
+    canvas.addEventListener('touchstart', (e) => { e.preventDefault(); isDrawing = true; hasSignature = true; ctx.beginPath(); ctx.moveTo(getPos(e).x, getPos(e).y); }, {passive: false});
+    canvas.addEventListener('touchmove', (e) => { e.preventDefault(); if(isDrawing) { ctx.lineTo(getPos(e).x, getPos(e).y); ctx.stroke(); } }, {passive: false});
+    canvas.addEventListener('touchend', () => { isDrawing = false; });
+    function clearSignature() { resizeCanvas(); hasSignature = false; }
+
+    // ================= PDF UTILITIES =================
+    function safeCheck(form, fieldName) { try { const field = form.getCheckBox(fieldName); if (field) field.check(); } catch (e) {} }
+    function safeFillText(form, fieldName, value) { try { const field = form.getTextField(fieldName); if (field && value) field.setText(value); } catch (e) {} }
+    function formatDate(dateStr) {
+        if(!dateStr) return "";
+        const parts = dateStr.split('-');
+        return `${parts[2]}/${parts[1]}/${parts[0]}`; 
+    }
+
+    // ================= PDF GENERATION =================
+    async function generatePDF() {
+        let missing = 0;
+        document.querySelectorAll('.error-border').forEach(el => el.classList.remove('error-border'));
+
+        if (currentChecklistType === "STANDARD") {
+            const data = database[document.getElementById('airlineSelect').value];
+            data.questions.forEach(q => {
+                if (q.options && !document.querySelector(`input[name="${q.id}"]:checked`)) {
+                    missing++; document.getElementById(`card_${q.id}`).classList.add('error-border');
+                }
+            });
+        } else {
+            const data = database["NEUTRAL_WITHOUT"];
+            data.blocks.forEach(block => {
+                if (!block.isOptional || document.getElementById(`chk_${block.id}`).checked) {
+                    block.questions.forEach(q => {
+                        const uniqueId = `${block.prefix}_${q.id}`;
+                        if (q.options && !document.querySelector(`input[name="${uniqueId}"]:checked`)) {
+                            missing++; document.getElementById(`card_${uniqueId}`).classList.add('error-border');
+                        }
+                    });
+                }
+            });
+        }
+
+        if (missing > 0) {
+            showToast(`⚠️ Action Required: Missing ${missing} questions in the active Checklist.`, 'error');
+            return; 
+        }
+
+        const primaryFile = document.getElementById('pdfTemplate').files[0];
+        if (!primaryFile) { showToast('Please upload the Primary Checklist PDF template (Input 1).', 'error'); return; }
+
+        if (isRejectedGlobal) {
+            const ablehnungFile = document.getElementById('ablehnungTemplate').files[0];
+            if (!ablehnungFile) { showToast('Please upload the DGR Rejection Notice PDF template (Input 2).', 'error'); return; }
+        }
+
+        const btnGenerate = document.getElementById('btnGenerate');
+        btnGenerate.innerText = "⏳ Processing...";
+
+        try {
+            const { PDFDocument, StandardFonts } = PDFLib;
+            const awbText = document.getElementById('AWB_NUM').value;
+            const formattedDate = formatDate(document.getElementById('DATE').value);
+            const finalShipper = document.getElementById('SHIPPER_INPUT').value.trim(); // ComboBox value
+            
+            // 1. PRIMARY CHECKLIST
+            const primBytes = await primaryFile.arrayBuffer();
+            const primDoc = await PDFDocument.load(primBytes);
+            const formP = primDoc.getForm();
+
+            safeFillText(formP, 'AWB_NUM', awbText);
+            safeFillText(formP, 'SHIPPER', finalShipper);
+            safeFillText(formP, 'PIECES', document.getElementById('PIECES').value);
+            safeFillText(formP, 'ORIGIN', document.getElementById('ORIGIN').value);
+            safeFillText(formP, 'DESTINATION', document.getElementById('DESTINATION').value);
+            safeFillText(formP, 'DATE', formattedDate);
+            safeFillText(formP, 'TIME', document.getElementById('TIME').value);
+            safeFillText(formP, 'INSPECTOR_NAME', document.getElementById('INSPECTOR_NAME').value);
+            safeFillText(formP, 'COMMENTS', document.getElementById('COMMENTS').value);
+            safeFillText(formP, 'DEPARTMENT', document.getElementById('DEPARTMENT').value);
+            safeFillText(formP, 'LOCATION', document.getElementById('LOCATION').value);
+            safeFillText(formP, 'STATION', document.getElementById('LOCATION').value);
+
+            const decision = document.querySelector('input[name="FINAL_DECISION"]:checked');
+            if(decision) safeCheck(formP, decision.value); 
+
+            if (currentChecklistType === "STANDARD") {
+                const data = database[document.getElementById('airlineSelect').value];
+                data.questions.forEach(q => {
+                    if(q.options) {
+                        const ans = document.querySelector(`input[name="${q.id}"]:checked`);
+                        if (ans) {
+                            const ansVal = ans.value === "N/A" ? "NA" : ans.value;
+                            safeCheck(formP, `${q.id}_${ansVal}`); 
+                        }
+                    }
+                });
+            } else {
+                currentPrefixes.forEach(prefix => {
+                    if(prefix !== "GENERAL") safeCheck(formP, `${prefix}_YES`);
+                    const block = database["NEUTRAL_WITHOUT"].blocks.find(b => b.prefix === prefix);
+                    block.questions.forEach(q => {
+                        const uniqueId = `${prefix}_${q.id}`;
+                        if(q.options) {
+                            const ans = document.querySelector(`input[name="${uniqueId}"]:checked`);
+                            if (ans) {
+                                const ansVal = ans.value === "N/A" ? "NA" : ans.value;
+                                safeCheck(formP, `${uniqueId}_${ansVal}`);
+                            }
+                        }
+                    });
+                });
+            }
+
+            if (hasSignature) {
+                const imgBytes = await fetch(canvas.toDataURL('image/png')).then(res => res.arrayBuffer());
+                const pngImage = await primDoc.embedPng(imgBytes);
+                try { const sigBtn = formP.getButton('SIGNATURE_BOX'); if (sigBtn) sigBtn.setImage(pngImage); } catch(e) {}
+            }
+            formP.flatten();
+            const finalPrimBytes = await primDoc.save();
+            downloadBlob(finalPrimBytes, `Checklist_${awbText || 'DGR'}.pdf`);
+
+            // 2. REJECTION (ABLEHNUNG)
+            if (isRejectedGlobal) {
+                const abFile = document.getElementById('ablehnungTemplate').files[0];
+                const abBytes = await abFile.arrayBuffer();
+                const abDoc = await PDFDocument.load(abBytes);
+                const formA = abDoc.getForm();
+
+                safeFillText(formA, 'DATUM_ABLEHNUNG', formattedDate);
+                safeFillText(formA, 'AWB_ABLEHNUNG', awbText);
+                safeFillText(formA, 'SHIPPER_ABLEHNUNG', finalShipper);
+                safeFillText(formA, 'ANZAHL_ABLEHNUNG', document.getElementById('PIECES').value);
+                safeFillText(formA, 'GRUND_ABLEHNUNG', document.getElementById('REASON').value);
+                safeFillText(formA, 'TEXT_ANMERKUNGEN', document.getElementById('ADD_COMMENTS').value);
+                safeFillText(formA, 'COMMENTS_ABLEHNUNG', document.getElementById('ADD_COMMENTS').value);
+                safeFillText(formA, 'INSPECTOR_NAME_ABLEHNUNG', document.getElementById('INSPECTOR_NAME').value);
+                safeFillText(formA, 'STATION_ABLEHNUNG', document.getElementById('LOCATION').value);
+                
+                if(document.getElementById('chk_kontakt').checked) safeCheck(formA, 'AKTION_KONTAKT');
+                if(document.getElementById('chk_umbuchen').checked) safeCheck(formA, 'AKTION_UMBUCHEN');
+                if(document.getElementById('chk_fach').checked) safeCheck(formA, 'AKTION_FACH');
+                if(document.getElementById('chk_anmerkungen').checked) safeCheck(formA, 'AKTION_COMMENTS');
+
+                if (selectedPhotos.length > 0) {
+                    let photoCount = 0;
+                    let currentPage = null;
+                    for (let i = 0; i < selectedPhotos.length; i++) {
+                        const file = selectedPhotos[i];
+                        const imgArrayBuffer = await file.arrayBuffer();
+                        let pdfImage;
+                        if (file.type === 'image/jpeg' || file.type === 'image/jpg') {
+                            pdfImage = await abDoc.embedJpg(imgArrayBuffer);
+                        } else if (file.type === 'image/png') {
+                            pdfImage = await abDoc.embedPng(imgArrayBuffer);
+                        } else continue; 
+
+                        if (photoCount % 2 === 0) currentPage = abDoc.addPage([595.28, 841.89]);
+                        const imgDims = pdfImage.scaleToFit(500, 350);
+                        const xCentered = (595.28 - imgDims.width) / 2;
+                        const yPos = photoCount % 2 === 0 ? 440 + (350 - imgDims.height)/2 : 50 + (350 - imgDims.height)/2;
+                        currentPage.drawImage(pdfImage, { x: xCentered, y: yPos, width: imgDims.width, height: imgDims.height });
+                        photoCount++;
+                    }
+                }
+
+                formA.flatten();
+                const pages = abDoc.getPages();
+                const font = await abDoc.embedFont(StandardFonts.HelveticaBold);
+                pages.forEach((page, index) => {
+                    const text = `Page ${index + 1} of ${pages.length}`;
+                    const textWidth = font.widthOfTextAtSize(text, 10);
+                    page.drawText(text, { x: (page.getWidth() - textWidth) / 2, y: 30, size: 10, font: font, color: PDFLib.rgb(0.3, 0.3, 0.3) });
+                });
+
+                const finalAbBytes = await abDoc.save();
+                downloadBlob(finalAbBytes, `Rejection_${awbText || 'DGR'}.pdf`);
+            }
+
+            btnGenerate.innerText = "✓ Success! Generate Again";
+            showToast("PDF(s) generated successfully!", "success");
+            setTimeout(() => { btnGenerate.innerText = i18n[currentLang].btnGen; }, 3000);
+
+        } catch (error) {
+            console.error(error);
+            showToast("Critical Error generating the PDFs. Check console.", "error");
+            btnGenerate.innerText = i18n[currentLang].btnGen;
+        }
+    }
+
+    function downloadBlob(bytes, filename) {
+        const blob = new Blob([bytes], { type: 'application/pdf' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+    // ── EXPORT / IMPORT DE DATOS ──────────────────────────────────────────────
+
+    function exportData() {
+        const data = {};
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key.startsWith('dgr_')) {
+                try { data[key] = JSON.parse(localStorage.getItem(key)); }
+                catch(e) { data[key] = localStorage.getItem(key); }
+            }
+        }
+        const json = JSON.stringify(data, null, 2);
+        const blob = new Blob([json], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `DGR_Backup_${new Date().toISOString().split('T')[0]}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast('✅ Data exported successfully!');
+    }
+
+    function importData(input) {
+        const file = input.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const data = JSON.parse(e.target.result);
+                let count = 0;
+                for (const [key, value] of Object.entries(data)) {
+                    if (key.startsWith('dgr_')) {
+                        localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
+                        count++;
+                    }
+                }
+                showToast(`✅ Imported ${count} data entries. Reloading...`);
+                setTimeout(() => location.reload(), 1500);
+            } catch(err) {
+                showToast('❌ Invalid backup file. Please use a valid DGR backup JSON.');
+            }
+        };
+        reader.readAsText(file);
+        input.value = '';
+    }
+
+    // ── PWA ───────────────────────────────────────────────────────────────────
+
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('./sw_dgr.js')
+                .then(() => console.log('DGR Tool: Service Worker registered'))
+                .catch(err => console.warn('SW registration failed:', err));
+        });
+    }
+
+</script>
+
+<!-- Footer versión -->
+<div style="max-width:750px; margin:15px auto 0; padding:0 15px; text-align:center; color:#64748b; font-size:11px; font-family:'Segoe UI',Arial,sans-serif;">
+    <div>✈️ DGR Acceptance Tool &nbsp;·&nbsp; v1.0 &nbsp;·&nbsp; 100% Offline &nbsp;·&nbsp; No server required</div>
+    <div style="margin-top:4px;"><a href="https://github.com/Brian24bcn/cargo-transport-tools" target="_blank" style="color:#64748b; text-decoration:none;">github.com/Brian24bcn/cargo-transport-tools</a></div>
+</div>
+
+</body>
+</html>

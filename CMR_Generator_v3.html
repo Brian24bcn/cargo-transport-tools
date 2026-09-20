@@ -1,0 +1,1116 @@
+<!DOCTYPE html>
+<!-- CMR Smart Issuer - Offline Module
+     Generates CMR road waybill documents (Convention Marchandise Routière).
+     100% offline — all data stored locally in the browser, no server required.
+     https://github.com/Brian24bcn/cargo-transport-tools
+-->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Offline CMR road waybill generator. Fill, sign and export CMR transport documents as PDF. No server required.">
+    <title>CMR Smart Issuer - Offline</title>
+    <!-- pdf-lib: CDN (online) — para uso 100% offline descarga pdf-lib.min.js y cambia esta línea a ./pdf-lib.min.js -->
+    <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+    <!-- Favicon -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🚛</text></svg>">
+    <!-- PWA -->
+    <link rel="manifest" href="./manifest_cmr.json">
+    <meta name="theme-color" content="#1a56a0">
+
+    <style>
+        /* CSS VARIABLE ARCHITECTURE FOR SEAMLESS THEME SWITCHING */
+        :root {
+            /* LIGHT MODE (Corporate Default) */
+            --primary: #002f6c; 
+            --secondary: #d97706; 
+            --bg-color: #e5e7eb; 
+            --panel-bg: #ffffff;
+            --section-bg: #f8fafc;
+            --text-main: #334155;
+            --text-muted: #64748b;
+            --border-color: #cbd5e1;
+            --input-bg: #ffffff;
+            --btn-submit: #002f6c;
+            --btn-submit-hover: #001f4d;
+            --canvas-bg: #ffffff;
+            --toast-bg: #ffffff;
+            --toast-text: #334155;
+            --quick-select-bg: #fffbeb;
+            --header-border: #002f6c;
+            --danger: #ef4444;
+        }
+
+        [data-theme="dark"] {
+            /* DARK MODE (Industrial Slate) */
+            --primary: #60a5fa; 
+            --secondary: #fbbf24; 
+            --bg-color: #0f172a; 
+            --panel-bg: #1e293b;
+            --section-bg: #0b1120;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --border-color: #334155;
+            --input-bg: #334155;
+            --btn-submit: #2563eb;
+            --btn-submit-hover: #1d4ed8;
+            --canvas-bg: #e2e8f0;
+            --toast-bg: #1e293b;
+            --toast-text: #ffffff;
+            --quick-select-bg: rgba(251, 191, 36, 0.1);
+            --header-border: #334155;
+        }
+
+        body { 
+            font-family: 'Segoe UI', Arial, sans-serif; 
+            background-color: var(--bg-color);
+            background-image: url("data:image/svg+xml,%3Csvg width='200' height='200' viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23noise)' opacity='0.06'/%3E%3C/svg%3E");
+            margin: 0; 
+            padding: 20px; 
+            color: var(--text-main); 
+            transition: background-color 0.3s ease, color 0.3s ease;
+        }
+
+        .container { max-width: 1200px; margin: 0 auto; background: var(--panel-bg); padding: 30px; border-radius: 8px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); transition: background-color 0.3s ease; }
+        
+        .header-top { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid var(--header-border); padding-bottom: 10px; margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
+        h1 { color: var(--primary); margin: 0; font-size: 24px; display: flex; align-items: center; gap: 10px;}
+        .secure-badge { font-size: 13px; background: #059669; color: white; padding: 5px 12px; border-radius: 20px; font-weight: bold; }
+        
+        .action-buttons { display: flex; gap: 12px; align-items: center; }
+
+        .btn-theme, .btn-lang, .btn-factory-top { 
+            background: transparent; border: 1px solid var(--secondary); color: var(--secondary); 
+            padding: 6px 12px; border-radius: 20px; cursor: pointer; font-weight: bold; font-size: 14px; 
+            transition: all 0.2s; display: flex; align-items: center; justify-content: center;
+        }
+        .btn-theme { font-size: 16px; padding: 4px 10px; }
+        .btn-theme:hover, .btn-lang:hover { background: var(--secondary); color: var(--panel-bg); }
+        .btn-factory-top { border-color: var(--danger); color: var(--danger); }
+        .btn-factory-top:hover { background: var(--danger); color: white; }
+
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; }
+        .section { background: var(--section-bg); border: 1px solid var(--border-color); padding: 20px; border-radius: 6px; margin-bottom: 20px; position: relative; transition: background-color 0.3s ease, border-color 0.3s ease; }
+        .section h3 { margin-top: 0; color: var(--primary); border-bottom: 1px solid var(--border-color); padding-bottom: 8px; display: flex; justify-content: space-between; align-items: center; transition: color 0.3s ease; }
+        
+        .form-group { display: flex; flex-direction: column; margin-bottom: 12px; }
+        label { font-weight: bold; font-size: 13px; margin-bottom: 5px; color: var(--text-muted); }
+        input, select, textarea { padding: 10px; background: var(--input-bg); color: var(--text-main); border: 1px solid var(--border-color); border-radius: 4px; font-size: 14px; transition: background-color 0.3s ease, color 0.3s ease; }
+        input:focus, select:focus, textarea:focus { outline: none; border-color: var(--primary); }
+        
+        .quick-select { background: var(--quick-select-bg); border: 1px dashed var(--secondary); padding: 8px; border-radius: 4px; margin-bottom: 10px; font-size: 13px; font-weight: bold; display:flex; align-items:center; color: var(--secondary); transition: background-color 0.3s ease; }
+        .quick-select select { padding: 5px; font-size: 13px; margin-left: 10px; flex-grow: 1; cursor: pointer; }
+
+        .docs-checkboxes { display: flex; gap: 12px; font-size: 12px; margin-bottom: 8px; flex-wrap: wrap; background: var(--panel-bg); padding: 10px; border-radius: 4px; border: 1px solid var(--border-color); }
+        .docs-checkboxes label { font-weight: bold; display: flex; align-items: center; gap: 5px; cursor: pointer; color: var(--text-main); margin: 0; }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th { background: var(--panel-bg); color: var(--primary); text-align: left; padding: 10px; font-size: 13px; border-bottom: 2px solid var(--border-color); }
+        td { padding: 6px 5px; }
+        td input { width: 95%; padding: 8px; }
+
+        .signature-box-wrapper { display: flex; flex-direction: column; align-items: center; justify-content: center; margin-top: 10px; }
+        .signature-container { border: 2px dashed var(--primary); background: var(--canvas-bg); border-radius: 4px; position: relative; width: 300px; height: 120px; transition: background-color 0.3s ease; }
+        canvas { display: block; width: 300px; height: 120px; cursor: crosshair; }
+        .clear-sig { position: absolute; top: -35px; right: 0; background: #ef4444; color: white; border: none; padding: 4px 10px; border-radius: 3px; cursor: pointer; font-size: 12px; font-weight: bold; }
+
+        .btn-submit { background: var(--btn-submit); color: white; border: none; padding: 16px; font-size: 18px; font-weight: bold; border-radius: 6px; width: 100%; cursor: pointer; margin-top: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); transition: background 0.2s;}
+        .btn-submit:hover { background: var(--btn-submit-hover); }
+        
+        .footer-actions { display: flex; justify-content: flex-end; gap: 15px; margin-top: 20px; }
+        .btn-clear-grid { background: #475569; color: white; border: none; padding: 10px 20px; font-size: 14px; font-weight: bold; border-radius: 4px; cursor: pointer; transition: background 0.2s;}
+        .btn-clear-grid:hover { background: #334155; }
+        .btn-clear-form { background: #64748b; color: white; border: none; padding: 10px 20px; font-size: 14px; font-weight: bold; border-radius: 4px; cursor: pointer; transition: background 0.2s;}
+        .btn-clear-form:hover { background: #b91c1c; }
+
+        /* Station Database Manager Styles */
+        .db-manager { background: var(--section-bg); padding: 20px; border-radius: 6px; border: 1px solid var(--border-color); margin-bottom: 20px; transition: all 0.3s ease; }
+        .db-manager h3 { color: var(--secondary); margin-top: 0; border-bottom: 1px solid var(--border-color); padding-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+        .btn-toggle-db { background: var(--secondary); color: #fff; border: none; padding: 4px 12px; font-weight: bold; border-radius: 4px; cursor: pointer; font-size: 12px; }
+        [data-theme="dark"] .btn-toggle-db { color: var(--bg-color); }
+        
+        .db-content { display: block; }
+        .db-content.hidden { display: none; }
+        .db-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; margin-bottom: 15px; margin-top: 15px; }
+        .db-box { background: var(--panel-bg); padding: 12px; border-radius: 4px; border: 1px solid var(--border-color); display: flex; flex-direction: column; }
+        .db-box h4 { margin-top: 0; margin-bottom: 10px; color: var(--primary); font-size: 13px; border-bottom: 1px solid var(--border-color); padding-bottom: 4px; }
+        .db-btn { background: var(--secondary); color: #fff; border: none; padding: 6px 12px; font-weight: bold; border-radius: 3px; cursor: pointer; font-size: 11px; margin-top: 8px; }
+        [data-theme="dark"] .db-btn { color: var(--bg-color); }
+        .db-list { margin-top: 8px; max-height: 80px; overflow-y: auto; background: var(--bg-color); padding: 5px; border-radius: 3px; font-size: 11px; border: 1px solid var(--border-color); }
+        .db-item { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; border-bottom: 1px solid var(--border-color); }
+        .db-item:last-child { border-bottom: none; }
+        .db-item span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 80%; }
+        .db-del-btn { background: #ef4444; color: white; border: none; padding: 2px 6px; border-radius: 2px; cursor: pointer; font-size: 10px; font-weight: bold; }
+
+        /* FLOATING TOASTS */
+        #toast-container { position: fixed; bottom: 30px; right: 30px; z-index: 9999; display: flex; flex-direction: column; gap: 10px; }
+        .toast { background: var(--toast-bg); color: var(--toast-text); padding: 14px 24px; border-left: 5px solid #10b981; border-radius: 6px; box-shadow: 0 10px 15px rgba(0,0,0,0.2); font-size: 14px; font-weight: bold; opacity: 0; transform: translateX(20px); transition: all 0.3s ease-out; border: 1px solid var(--border-color); border-left-width: 5px;}
+        .toast.toast-error { border-left-color: #ef4444; }
+        .toast.show { opacity: 1; transform: translateX(0); }
+        
+        .page-counter-group { display: flex; gap: 5px; align-items: center; margin-bottom: 8px; font-size: 13px; color: var(--text-muted); font-weight: bold;}
+        .page-counter-group input { width: 50px; padding: 5px; font-size: 12px; text-align: center; }
+        
+        .lock-btn { background: none; border: none; cursor: pointer; font-size: 14px; margin-left: auto; padding: 0 5px; }
+
+        /* ══════════════════════════════════════════════════════════
+           RESPONSIVE  —  Mobile & Tablet
+           Touch targets mínimos: 44 × 44 px (Apple HIG / WCAG 2.5.5)
+           font-size ≥ 16px en inputs evita zoom automático en iOS
+           ══════════════════════════════════════════════════════════ */
+
+        /* iOS: evita zoom al enfocar inputs */
+        @supports (-webkit-touch-callout: none) {
+            input, select, textarea { font-size: 16px !important; }
+        }
+
+        @media (max-width: 768px) {
+            /* ── Página ── */
+            body { padding: 8px; }
+            .container { padding: 14px; border-radius: 6px; }
+
+            /* ── Header ── */
+            .header-top { flex-direction: column; align-items: flex-start; gap: 8px; }
+            h1 { font-size: 17px; flex-wrap: wrap; gap: 6px; }
+            .secure-badge { font-size: 11px; padding: 3px 8px; }
+            .action-buttons { width: 100%; justify-content: flex-end; gap: 8px; }
+            .btn-theme  { min-width: 44px; min-height: 44px; font-size: 18px; padding: 8px; }
+            .btn-factory-top { min-height: 44px; padding: 8px 12px; font-size: 12px; }
+
+            /* ── Grids → columna única ── */
+            .grid-2, .grid-3, .db-grid { grid-template-columns: 1fr; gap: 10px; }
+
+            /* ── Secciones ── */
+            .section { padding: 12px; }
+            .section h3 { font-size: 14px; }
+            .db-manager { padding: 12px; }
+
+            /* ── Inputs — 16px previene zoom iOS ── */
+            input, select, textarea { font-size: 16px; padding: 12px; }
+            label { font-size: 12px; }
+            .form-group { margin-bottom: 14px; }
+
+            /* ── Quick-select ── */
+            .quick-select { flex-direction: column; align-items: flex-start; gap: 6px; padding: 10px; }
+            .quick-select select { margin-left: 0; width: 100%; font-size: 16px; padding: 10px; min-height: 44px; }
+
+            /* ── Checkboxes de documentos ── */
+            .docs-checkboxes { flex-direction: column; gap: 10px; }
+            .docs-checkboxes label { font-size: 13px; min-height: 36px; }
+            .docs-checkboxes input[type="checkbox"] { width: 20px; height: 20px; flex-shrink: 0; }
+
+            /* ── Tabla de carga — scroll horizontal táctil ── */
+            table { -webkit-overflow-scrolling: touch; }
+            th { font-size: 11px; padding: 8px 5px; white-space: nowrap; }
+            td { padding: 4px 3px; }
+            td input { padding: 10px 8px; font-size: 15px; }
+
+            /* ── Firma ── */
+            .signature-box-wrapper { align-items: stretch; }
+            .signature-container { width: 100%; height: 150px; box-sizing: border-box; }
+            #sig-canvas { width: 100% !important; height: 150px !important; touch-action: none; }
+            .clear-sig { min-height: 36px; padding: 6px 12px; font-size: 13px; }
+
+            /* ── Botón principal ── */
+            .btn-submit { padding: 18px; font-size: 16px; min-height: 56px; border-radius: 8px; }
+
+            /* ── Footer buttons ── */
+            .footer-actions { flex-direction: column; gap: 10px; }
+            .btn-clear-grid,
+            .btn-clear-form { width: 100%; min-height: 44px; font-size: 14px; padding: 12px; }
+
+            /* ── DB buttons ── */
+            .db-btn { min-height: 44px; padding: 10px 14px; font-size: 13px; width: 100%; }
+            .btn-toggle-db { min-height: 36px; padding: 6px 14px; }
+
+            /* ── Toast ── */
+            #toast-container { bottom: 15px; right: 10px; left: 10px; }
+            .toast { font-size: 13px; padding: 12px 16px; }
+
+            /* ── Contador de páginas ── */
+            .page-counter-group { flex-wrap: wrap; gap: 8px; }
+            .page-counter-group input { min-height: 36px; font-size: 15px; }
+
+            /* ── Lock button ── */
+            .lock-btn { min-width: 44px; min-height: 44px; font-size: 16px; }
+        }
+
+        @media (max-width: 480px) {
+            h1 { font-size: 15px; }
+            .secure-badge { display: none; }
+            .container { padding: 10px; }
+            th { font-size: 10px; padding: 6px 4px; }
+        }
+    </style>
+</head>
+<body>
+
+<div id="toast-container"></div>
+
+<datalist id="cmr-references-list"></datalist>
+<datalist id="packing-options-list">
+    <option value="Pallet">
+    <option value="Box">
+    <option value="Carton">
+    <option value="Crate">
+    <option value="Case">
+    <option value="Drum">
+    <option value="Barrel">
+    <option value="Bag">
+    <option value="Big Bag (FIBC)">
+    <option value="Sack">
+    <option value="Roll">
+    <option value="Bundle">
+    <option value="Coil">
+    <option value="Jerrican">
+    <option value="Cylinder">
+    <option value="IBC">
+    <option value="Pail">
+    <option value="Loose / Bulk">
+</datalist>
+<datalist id="nature-goods-list">
+    <option value="General Cargo">
+    <option value="Electronics">
+    <option value="Spare Parts">
+    <option value="Machinery">
+    <option value="Automotive Parts">
+    <option value="Chemicals">
+    <option value="Pharmaceuticals">
+    <option value="Food Products">
+    <option value="Textiles">
+    <option value="Paper / Printed Materials">
+    <option value="Metal Parts">
+    <option value="Plastic Products">
+    <option value="Furniture">
+    <option value="Dangerous Goods (ADR)">
+    <option value="Personal Effects">
+</datalist>
+
+<div class="container">
+    <div class="header-top">
+        <h1><span id="txt-title">📄 CMR Smart Issuer</span> <span class="secure-badge">🌐 Works 100% Offline</span></h1>
+        <div class="action-buttons">
+            <button class="btn-factory-reset btn-factory-top" onclick="factoryResetDB()" id="btn-factory-reset" title="Permanently deletes address book and all settings">🗑️ Wipe All Saved Data</button>
+            <button class="btn-theme" onclick="toggleTheme()" id="btn-theme" title="Toggle Light/Dark Mode">🌙</button>
+        </div>
+    </div>
+    
+    <div class="section" style="border: 2px solid var(--primary);">
+        <h3 id="txt-step1">📁 Step 1: Select your Form Template</h3>
+        <div class="form-group">
+            <input type="file" id="pdf_file_input" accept=".pdf" style="cursor: pointer;">
+        </div>
+    </div>
+
+    <div class="db-manager">
+        <h3>
+            <span id="txt-db-title">🗄️ Address Book & References</span>
+            <button class="btn-toggle-db" onclick="toggleDirectory()" id="btn-toggle-dir">[+] Show Directory</button>
+        </h3>
+        
+        <div id="db-content-wrapper" class="db-content hidden">
+            <p id="txt-db-desc" style="font-size:12px; color:var(--text-muted); margin-top:-8px;">Manage your parameters. All lists automatically sort alphabetically (A-Z) for streamlined searching.</p>
+            
+            <div class="db-grid">
+                <div class="db-box">
+                    <h4 id="txt-db-send">🏢 Sender Profiles (Box 1)</h4>
+                    <input type="text" id="db_sender_name" placeholder="Alias (e.g. My Company HQ)">
+                    <textarea id="db_sender_addr" rows="2" placeholder="Full address and registration..."></textarea>
+                    <button class="db-btn" onclick="saveToDB('senders', 'sender')" id="btn-save-send">💾 Save Sender</button>
+                    <div class="db-list" id="list_senders"></div>
+                </div>
+                <div class="db-box">
+                    <h4 id="txt-db-cons">🏢 Consignee Profiles (Box 2)</h4>
+                    <input type="text" id="db_consignee_name" placeholder="Alias (e.g. Lufthansa FRA)">
+                    <textarea id="db_consignee_addr" rows="2" placeholder="Official destination address..."></textarea>
+                    <button class="db-btn" onclick="saveToDB('consignees', 'consignee')" id="btn-save-cons">💾 Save Consignee</button>
+                    <div class="db-list" id="list_consignees"></div>
+                </div>
+                <div class="db-box">
+                    <h4 id="txt-db-carr">🚛 Carrier Directory (Box 16)</h4>
+                    <input type="text" id="db_carrier_name" placeholder="Alias (e.g. DHL Express)">
+                    <textarea id="db_carrier_addr" rows="2" placeholder="Official trucking address..."></textarea>
+                    <button class="db-btn" onclick="saveToDB('carriers', 'carrier')" id="btn-save-carr">💾 Save Carrier</button>
+                    <div class="db-list" id="list_carriers"></div>
+                </div>
+            </div>
+
+            <div class="db-grid">
+                <div class="db-box">
+                    <h4 id="txt-db-del">📍 Places of Delivery (Box 3)</h4>
+                    <input type="text" id="db_delivery_name" placeholder="Location Code (e.g. Frankfurt FRA)">
+                    <button class="db-btn" onclick="saveSimpleToDB('deliveries', 'db_delivery_name')" id="btn-save-del">💾 Save Delivery</button>
+                    <div class="db-list" id="list_deliveries"></div>
+                </div>
+                <div class="db-box">
+                    <h4 id="txt-db-take">📍 Places of Taking Over (Box 4)</h4>
+                    <input type="text" id="db_takeover_name" placeholder="Location Code (e.g. Berlin BER)">
+                    <button class="db-btn" onclick="saveSimpleToDB('takeovers', 'db_takeover_name')" id="btn-save-take">💾 Save Takeover</button>
+                    <div class="db-list" id="list_takeovers"></div>
+                </div>
+                <div class="db-box">
+                    <h4 id="txt-db-flight">📦 References / Marks (Box 6)</h4>
+                    <input type="text" id="db_flight_no" placeholder="Reference or mark (e.g. PO-12345, REF-001)">
+                    <button class="db-btn" onclick="saveFlightToDB()" id="btn-save-flight">💾 Save Flight</button>
+                    <div class="db-list" id="list_flights"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid-2">
+        <div class="section">
+            <h3 id="txt-parties">🏢 Parties Involved</h3>
+            <div class="quick-select">
+                ⚡ <span class="i18n-load">Load Sender:</span>
+                <select id="select_sender" onchange="loadFromDB('select_sender', 'field_sender')">
+                    <option value="">-- Select Saved Sender --</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label id="lbl-sender">1. Sender (Absender)</label>
+                <textarea id="field_sender" rows="3" oninput="saveFieldMemory('field_sender')"></textarea>
+            </div>
+            
+            <div class="quick-select">
+                ⚡ <span class="i18n-load">Load Consignee:</span>
+                <select id="select_consignee" onchange="loadFromDB('select_consignee', 'field_consignee')">
+                    <option value="">-- Select Saved Consignee --</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label id="lbl-consignee">2. Consignee (Empfänger)</label>
+                <textarea id="field_consignee" rows="3" oninput="saveFieldMemory('field_consignee')"></textarea>
+            </div>
+        </div>
+
+        <div class="section">
+            <h3 id="txt-route">📍 Route & Locations</h3>
+            <div class="quick-select">
+                ⚡ <span class="i18n-load">Load Delivery:</span>
+                <select id="select_delivery" onchange="loadFromDB('select_delivery', 'field_delivery')">
+                    <option value="">-- Select Location --</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label id="lbl-delivery">3. Place of Delivery (Erfüllungsort)</label>
+                <input type="text" id="field_delivery" oninput="saveFieldMemory('field_delivery')">
+            </div>
+            
+            <div class="quick-select">
+                ⚡ <span class="i18n-load">Load Takeover:</span>
+                <select id="select_takeover" onchange="loadFromDB('select_takeover', 'field_takeover')">
+                    <option value="">-- Select Location --</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label id="lbl-takeover">4. Place and Date of Taking Over</label>
+                <div style="display: flex; gap: 10px;">
+                    <input type="text" id="field_takeover" placeholder="Place" style="flex: 2;" oninput="saveFieldMemory('field_takeover')">
+                    <input type="date" id="field_takeover_date" style="flex: 1; padding:8px;">
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label style="margin-top:10px;" id="lbl-docs">5. Documents Attached</label>
+                <div class="docs-checkboxes">
+                    <label><input type="checkbox" value="Manifest" onchange="toggleDoc(this)"> Manifest</label>
+                    <label><input type="checkbox" value="AWB" onchange="toggleDoc(this)"> AWB</label>
+                    <label><input type="checkbox" value="HAWB" onchange="toggleDoc(this)"> HAWB</label>
+                    <label><input type="checkbox" value="ADR" onchange="toggleDoc(this)"> ADR</label>
+                    <label><input type="checkbox" value="T1" onchange="toggleDoc(this)"> T1</label>
+                    <label><input type="checkbox" value="T2" onchange="toggleDoc(this)"> T2</label>
+                    <label><input type="checkbox" value="Commercial Invoice" onchange="toggleDoc(this)"> Comm. Invoice</label>
+                    <label><input type="checkbox" value="Packing List" onchange="toggleDoc(this)"> Packing List</label>
+                    <label><input type="checkbox" value="ULD Report" onchange="toggleDoc(this)"> ULD Report</label>
+                </div>
+                <input type="text" id="field_documents" placeholder="e.g. Manifest, AWB..." oninput="saveFieldMemory('field_documents')">
+            </div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h3 id="txt-transport">🚛 Transport & Security Controls</h3>
+        <div class="grid-3">
+            <div class="form-group">
+                <div class="quick-select" style="margin-bottom:5px;">
+                    ⚡ <span class="i18n-load">Load Carrier:</span>
+                    <select id="select_carrier" onchange="loadFromDB('select_carrier', 'field_carrier')">
+                        <option value="">-- Select Trucker --</option>
+                    </select>
+                </div>
+                <label id="lbl-carrier">16. Carrier (Frachtführer)</label>
+                <textarea id="field_carrier" rows="3" oninput="saveFieldMemory('field_carrier')"></textarea>
+            </div>
+            <div class="form-group">
+                <label style="margin-top:35px; display:flex; align-items:center;" id="lbl-plates">
+                    16. Truck Plates 
+                    <button class="lock-btn" onclick="togglePlateLock()" id="btn-plate-lock" title="Lock plates between multi resets">🔓 Unlocked</button>
+                </label>
+                <textarea id="field_plates" rows="2" style="font-family: inherit; resize: none;" oninput="saveFieldMemory('field_plates')"></textarea>
+            </div>
+            <div class="form-group">
+                <label style="margin-top:35px;" id="lbl-instructions">13. Special Instructions</label>
+                <div class="page-counter-group">
+                    <span id="lbl-page">Page</span> 
+                    <input type="number" id="page_current" min="1" placeholder="#" oninput="saveFieldMemory('page_current')"> 
+                    <span id="lbl-of">of</span> 
+                    <input type="number" id="page_total" min="1" placeholder="#" oninput="saveFieldMemory('page_total')">
+                </div>
+                <textarea id="field_instructions" rows="2" oninput="saveFieldMemory('field_instructions')"></textarea>
+            </div>
+        </div>
+        <div class="grid-3" style="margin-top: 10px;">
+            <div class="form-group">
+                <label id="lbl-seal">13. SEAL Number</label>
+                <input type="text" id="field_seal">
+            </div>
+            <div class="form-group">
+                <label id="lbl-adr">ADR Status</label>
+                <select id="field_adr_check">
+                    <option value="">NO (General Cargo)</option>
+                    <option value="YES">YES (Dangerous Goods)</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label id="lbl-established">21. Established Place and Date</label>
+                <div style="display: flex; gap: 10px;">
+                    <input type="text" id="field_established_place" style="flex: 2;" oninput="saveFieldMemory('field_established_place')">
+                    <input type="date" id="field_established_date" style="flex: 1; padding:8px;">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="section">
+        <h3 id="txt-grid">📋 Cargo Details — Boxes 6–12 (7 Rows)</h3>
+        <table style="overflow-x: auto; display: block;">
+            <thead>
+                <tr>
+                    <th style="width: 25%;" id="th-flight">Marks and Nos (Box 6)</th>
+                    <th style="width: 15%;" id="th-pkgs">Pkgs (Box 7)</th>
+                    <th style="width: 25%;" id="th-pack">Packing Type (Box 8)</th>
+                    <th style="width: 20%;" id="th-nature">9. Nature of Goods</th>
+                    <th style="width: 15%;" id="th-weight">Weight (Gross kg - 11)</th>
+                </tr>
+            </thead>
+            <tbody id="flights-tbody"></tbody>
+        </table>
+    </div>
+
+    <div class="section">
+        <h3 id="txt-sig">✏️ 22. Sender's Signature</h3>
+        <div class="signature-box-wrapper">
+            <div class="signature-container">
+                <button class="clear-sig" onclick="clearCanvas()">Reset</button>
+                <canvas id="sig-canvas" width="300" height="120"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <button class="btn-submit" onclick="generateAndDownloadCMR()" id="btn-process">⚡ PROCESS LOCAL CMR (EXPORT PDF)</button>
+    
+    <div class="footer-actions">
+        <button class="btn-clear-grid" onclick="clearOnlyCargoGrid()" id="btn-clear-grid">🧹 Clear Cargo Grid</button>
+        <button class="btn-clear-form" onclick="clearEntireForm()" id="btn-reset">📄 New Document</button>
+    </div>
+</div>
+
+<script>
+    // --- THEME ENGINE ---
+    const themeBtn = document.getElementById('btn-theme');
+    const savedTheme = localStorage.getItem('cmr_theme') || 'light';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+    themeBtn.innerHTML = savedTheme === 'dark' ? '☀️' : '🌙';
+
+    function toggleTheme() {
+        const currentTheme = document.documentElement.getAttribute('data-theme');
+        const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+        
+        document.documentElement.setAttribute('data-theme', newTheme);
+        localStorage.setItem('cmr_theme', newTheme);
+        themeBtn.innerHTML = newTheme === 'dark' ? '☀️' : '🌙';
+        
+        showToast(`Switched to ${newTheme === 'dark' ? 'Dark' : 'Light'} Mode`, false);
+    }
+
+    // --- SECURITY WARNING (beforeunload) ---
+    window.addEventListener('beforeunload', function (e) {
+        e.preventDefault();
+        e.returnValue = '';
+    });
+
+    // --- FLOATING TOASTS NOTIFICATIONS ---
+    function showToast(message, isError = false) {
+        const container = document.getElementById('toast-container');
+        const toast = document.createElement('div');
+        toast.className = `toast ${isError ? 'toast-error' : ''}`;
+        toast.innerText = message;
+        container.appendChild(toast);
+        
+        setTimeout(() => toast.classList.add('show'), 10);
+        setTimeout(() => {
+            toast.classList.remove('show');
+            setTimeout(() => toast.remove(), 300);
+        }, 3500);
+    }
+
+    // --- DICTIONARY & LANGUAGE TOGGLE ---
+    // ─────────────────────────────────────────────────────────────────────────
+    // CONFIGURATION — Add your own default entries here.
+    // These are loaded once on first launch and saved to the browser's LocalStorage.
+    // After that, all changes are made via the Station Directory in the UI.
+    //
+    // FORMAT:
+    //   senders / consignees / carriers: { name: "Alias", address: "Line1\nLine2\nCity" }
+    //   deliveries / takeovers:          { name: "City, Country" }
+    //   flights:                         "FLIGHTCODE"  (string)
+    // ─────────────────────────────────────────────────────────────────────────
+    const CONFIG = {
+        senders:    [
+            // { name: "My Company", address: "Street 1\n12345 City\nCertificate No." }
+        ],
+        consignees: [
+            // { name: "Partner Cargo", address: "Airport Road 5\n60549 Frankfurt\nDeutschland" }
+        ],
+        carriers:   [
+            // { name: "Transport Co.", address: "DE/H/00000-00" }
+        ],
+        deliveries: [
+            // { name: "60549 Frankfurt, DE" }
+        ],
+        takeovers:  [
+            // { name: "12345 My City, DE" }
+        ],
+        flights:    [
+            // "LH1234", "EK5678"
+        ]
+    };
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // --- DATABASE ENGINE ---
+    let isFirstLoad = !localStorage.getItem('cmr_enterprise_db');
+    let appDB = JSON.parse(localStorage.getItem('cmr_enterprise_db')) || { 
+        senders: [], consignees: [], carriers: [], deliveries: [], takeovers: [], flights: [] 
+    };
+
+    if (isFirstLoad) {
+        CONFIG.senders.forEach((s, i) => appDB.senders.push({ id: 100 + i, name: s.name, address: s.address }));
+        CONFIG.consignees.forEach((c, i) => appDB.consignees.push({ id: 300 + i, name: c.name, address: c.address }));
+        CONFIG.carriers.forEach((c, i) => appDB.carriers.push({ id: 200 + i, name: c.name, address: c.address }));
+        CONFIG.deliveries.forEach((d, i) => appDB.deliveries.push({ id: 400 + i, name: d.name }));
+        CONFIG.takeovers.forEach((t, i) => appDB.takeovers.push({ id: 500 + i, name: t.name }));
+        CONFIG.flights.forEach((f, i) => appDB.flights.push({ id: 600 + i, code: f.toUpperCase().trim() }));
+
+        localStorage.setItem('cmr_enterprise_db', JSON.stringify(appDB));
+        showToast("CMR Tool ready. Add your contacts via the Station Directory.");
+    }
+
+    const fieldMemoryKeys = ['field_sender', 'field_consignee', 'field_delivery', 'field_takeover', 'field_documents', 'field_carrier', 'field_plates', 'field_instructions', 'field_established_place', 'page_current', 'page_total'];
+
+    window.addEventListener('DOMContentLoaded', () => {
+        if(!appDB.senders) appDB.senders = [];
+        if(!appDB.deliveries) appDB.deliveries = [];
+        if(!appDB.takeovers) appDB.takeovers = [];
+
+        // Build cargo grid rows (replaces deprecated document.write)
+        const tbody = document.getElementById('flights-tbody');
+        for (let i = 1; i <= 7; i++) {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td><input type="text" id="flight_${i}" list="cmr-references-list"></td>
+                <td><input type="number" id="pkgs_${i}"></td>
+                <td><input type="text" id="packing_${i}" list="packing-options-list"></td>
+                <td><input type="text" id="nature_${i}" list="nature-goods-list"></td>
+                <td><input type="text" id="weight_${i}"></td>`;
+            tbody.appendChild(tr);
+        }
+
+        refreshDBViews();
+        loadFieldsMemory();
+        setupCanvasDrawing();
+        
+        // field_established_place is restored from memory if previously saved
+        
+        const savedLock = localStorage.getItem('cmr_plate_lock') === 'true';
+        if (savedLock) {
+            const plateLock = document.getElementById('btn-plate-lock');
+            plateLock.classList.add('locked');
+            plateLock.style.color = 'var(--secondary)';
+            plateLock.innerText = "🔒 Locked";
+        }
+
+        resetDatesToToday();
+    });
+
+    function resetDatesToToday() {
+        const todayStr = new Date().toISOString().split('T')[0];
+        document.getElementById('field_takeover_date').value = todayStr;
+        document.getElementById('field_established_date').value = todayStr;
+    }
+
+    function togglePlateLock() {
+        const plateLock = document.getElementById('btn-plate-lock');
+        const isLocked = plateLock.classList.contains('locked');
+        if (isLocked) {
+            plateLock.classList.remove('locked');
+            plateLock.style.color = '';
+            plateLock.innerText = "🔓 Unlocked";
+            localStorage.setItem('cmr_plate_lock', 'false');
+        } else {
+            plateLock.classList.add('locked');
+            plateLock.style.color = 'var(--secondary)';
+            plateLock.innerText = "🔒 Locked";
+            localStorage.setItem('cmr_plate_lock', 'true');
+        }
+    }
+
+    function toggleDirectory() {
+        const content = document.getElementById('db-content-wrapper');
+        const btn = document.getElementById('btn-toggle-dir');
+        if (content.classList.contains('hidden')) {
+            content.classList.remove('hidden');
+            btn.innerText = "[-] Hide Directory";
+        } else {
+            content.classList.add('hidden');
+            btn.innerText = "[+] Show Directory";
+        }
+    }
+
+    function toggleDoc(cb) {
+        let field = document.getElementById('field_documents');
+        let currentDocs = field.value.split(',').map(s => s.trim()).filter(s => s);
+        if (cb.checked) {
+            if (!currentDocs.includes(cb.value)) currentDocs.push(cb.value);
+        } else {
+            currentDocs = currentDocs.filter(s => s !== cb.value);
+        }
+        field.value = currentDocs.join(', ');
+        saveFieldMemory('field_documents');
+    }
+
+    function saveToDB(category, prefix) {
+        const nameInput = document.getElementById(`db_${prefix}_name`);
+        const addrInput = document.getElementById(`db_${prefix}_addr`);
+        if (!nameInput.value || !addrInput.value) {
+            showToast("⚠️ Missing Fields: Both Name and Address are required.", true);
+            return;
+        }
+        const newItem = { id: Date.now(), name: nameInput.value.trim(), address: addrInput.value.trim() };
+        appDB[category].push(newItem);
+        localStorage.setItem('cmr_enterprise_db', JSON.stringify(appDB));
+        nameInput.value = ''; addrInput.value = '';
+        refreshDBViews();
+        showToast("Record saved successfully.");
+    }
+
+    function saveSimpleToDB(category, inputElementId) {
+        const inputField = document.getElementById(inputElementId);
+        const name = inputField.value.trim();
+        if(!name) return showToast("⚠️ Please fill the input field first.", true);
+        const newItem = { id: Date.now(), name: name };
+        appDB[category].push(newItem);
+        localStorage.setItem('cmr_enterprise_db', JSON.stringify(appDB));
+        inputField.value = '';
+        refreshDBViews();
+        showToast("Location saved successfully.");
+    }
+
+    function saveFlightToDB() {
+        const flightInput = document.getElementById('db_flight_no');
+        const code = flightInput.value.toUpperCase().trim();
+        if(!code) return showToast("⚠️ Please enter a reference or mark first.", true);
+        const newFlight = { id: Date.now(), code: code };
+        appDB.flights.push(newFlight);
+        localStorage.setItem('cmr_enterprise_db', JSON.stringify(appDB));
+        flightInput.value = '';
+        refreshDBViews();
+        showToast("Reference saved successfully.");
+    }
+
+    function deleteFromDB(category, id) {
+        if(confirm("Are you sure you want to permanently erase this record?")) {
+            appDB[category] = appDB[category].filter(item => item.id !== id);
+            localStorage.setItem('cmr_enterprise_db', JSON.stringify(appDB));
+            refreshDBViews();
+            showToast("Record deleted.");
+        }
+    }
+
+    function sortAlphabetically(a, b) {
+        let nameA = (a.name || a.code || '').toUpperCase();
+        let nameB = (b.name || b.code || '').toUpperCase();
+        return nameA.localeCompare(nameB);
+    }
+
+    function refreshDBViews() {
+        appDB.senders.sort(sortAlphabetically);
+        appDB.consignees.sort(sortAlphabetically);
+        appDB.carriers.sort(sortAlphabetically);
+        appDB.deliveries.sort(sortAlphabetically);
+        appDB.takeovers.sort(sortAlphabetically);
+        appDB.flights.sort(sortAlphabetically);
+
+        const complexConfigs = [
+            { array: 'senders', selectId: 'select_sender', label: 'Sender' },
+            { array: 'consignees', selectId: 'select_consignee', label: 'Consignee' },
+            { array: 'carriers', selectId: 'select_carrier', label: 'Carrier' }
+        ];
+
+        complexConfigs.forEach(cfg => {
+            const listDiv = document.getElementById(`list_${cfg.array}`);
+            listDiv.innerHTML = '';
+            appDB[cfg.array].forEach(item => {
+                listDiv.innerHTML += `
+                    <div class="db-item">
+                        <span title="${item.address}"><strong>${item.name}</strong></span>
+                        <button class="db-del-btn" onclick="deleteFromDB('${cfg.array}', ${item.id})">Delete</button>
+                    </div>`;
+            });
+
+            const selectMenu = document.getElementById(cfg.selectId);
+            selectMenu.innerHTML = `<option value="">-- Select Saved ${cfg.label} --</option>`;
+            appDB[cfg.array].forEach(item => {
+                const opt = document.createElement('option');
+                opt.value = item.name + '\n' + item.address; 
+                opt.textContent = item.name;
+                selectMenu.appendChild(opt);
+            });
+        });
+
+        const simpleConfigs = [
+            { array: 'deliveries', selectId: 'select_delivery', label: 'Location' },
+            { array: 'takeovers', selectId: 'select_takeover', label: 'Location' }
+        ];
+
+        simpleConfigs.forEach(cfg => {
+            const listDiv = document.getElementById(`list_${cfg.array}`);
+            listDiv.innerHTML = '';
+            appDB[cfg.array].forEach(item => {
+                listDiv.innerHTML += `
+                    <div class="db-item">
+                        <span><strong>${item.name}</strong></span>
+                        <button class="db-del-btn" onclick="deleteFromDB('${cfg.array}', ${item.id})">Delete</button>
+                    </div>`;
+            });
+
+            const selectMenu = document.getElementById(cfg.selectId);
+            selectMenu.innerHTML = `<option value="">-- Select ${cfg.label} --</option>`;
+            appDB[cfg.array].forEach(item => {
+                const opt = document.createElement('option');
+                opt.value = item.name;
+                opt.textContent = item.name;
+                selectMenu.appendChild(opt);
+            });
+        });
+
+        const flightsDiv = document.getElementById('list_flights');
+        const flightsDatalist = document.getElementById('cmr-references-list');
+        flightsDiv.innerHTML = ''; flightsDatalist.innerHTML = '';
+
+        appDB.flights.forEach(flight => {
+            flightsDiv.innerHTML += `
+                <div class="db-item">
+                    <span><strong>${flight.code}</strong></span>
+                    <button class="db-del-btn" onclick="deleteFromDB('flights', ${flight.id})">Delete</button>
+                </div>`;
+            const opt = document.createElement('option');
+            opt.value = flight.code;
+            flightsDatalist.appendChild(opt);
+        });
+    }
+
+    function loadFromDB(selectId, inputTargetId) {
+        const val = document.getElementById(selectId).value;
+        if(val) {
+            document.getElementById(inputTargetId).value = val;
+            saveFieldMemory(inputTargetId);
+            showToast("Data loaded successfully.");
+        }
+    }
+
+    function saveFieldMemory(fieldId) {
+        localStorage.setItem(`cmr_v4_${fieldId}`, document.getElementById(fieldId).value);
+    }
+
+    function loadFieldsMemory() {
+        fieldMemoryKeys.forEach(key => {
+            const saved = localStorage.getItem(`cmr_v4_${key}`);
+            if(saved !== null) {
+                document.getElementById(key).value = saved;
+            }
+        });
+    }
+
+    function newFromLast() {
+        // 1. Recargar todos los campos guardados (sender, consignee, carrier, instructions, etc.)
+        loadFieldsMemory();
+
+        // 2. Vaciar la tabla de carga (filas 1-7)
+        for (let i = 1; i <= 7; i++) {
+            ['flight', 'pkgs', 'packing', 'nature', 'weight'].forEach(field => {
+                const el = document.getElementById(`${field}_${i}`);
+                if (el) el.value = '';
+            });
+        }
+
+        // 3. Actualizar fechas a hoy
+        resetDatesToToday();
+
+        // 4. Limpiar la firma
+        const canvas = document.getElementById('sig-canvas');
+        if (canvas) {
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            hasSignature = false;
+        }
+
+        showToast('📋 Loaded from last CMR — cargo grid cleared and date updated.');
+    }
+
+    function clearOnlyCargoGrid() {
+        for(let i=1; i<=7; i++) {
+            document.getElementById(`flight_${i}`).value = '';
+            document.getElementById(`pkgs_${i}`).value = '';
+            document.getElementById(`packing_${i}`).value = '';
+            document.getElementById(`nature_${i}`).value = '';
+            document.getElementById(`weight_${i}`).value = '';
+        }
+        showToast("Cargo table grid cleared.");
+    }
+
+    function clearEntireForm() {
+        if(confirm("Are you sure you want to completely wipe out the current form sheet text fields?")) {
+            const isPlateLocked = document.getElementById('btn-plate-lock').classList.contains('locked');
+            
+            fieldMemoryKeys.forEach(key => {
+                if (key === 'field_plates' && isPlateLocked) return;
+                document.getElementById(key).value = '';
+                localStorage.removeItem(`cmr_v4_${key}`);
+            });
+            
+            document.querySelectorAll('.docs-checkboxes input[type="checkbox"]').forEach(cb => cb.checked = false);
+            clearOnlyCargoGrid();
+            
+            document.getElementById('page_current').value = '';
+            document.getElementById('page_total').value = '';
+            
+            clearCanvas();
+            resetDatesToToday();
+            
+            document.getElementById('field_established_place').value = '';
+            saveFieldMemory('field_established_place');
+            
+            showToast("Form cleared successfully.");
+        }
+    }
+
+    function factoryResetDB() {
+        if(confirm("⚠️ WIPE ALL SAVED DATA\n\nThis will permanently delete:\n• Address book (senders, consignees, carriers)\n• Saved references\n• All settings\n\nThe current document will also be cleared.\nThis cannot be undone. Continue?")) {
+            localStorage.clear();
+            showToast("System wiped. Reloading in 2 seconds...");
+            setTimeout(() => { location.reload(); }, 2000);
+        }
+    }
+
+    // --- CANVAS ENGINE ---
+    const canvas = document.getElementById('sig-canvas');
+    const ctx = canvas.getContext('2d');
+    let drawing = false;
+
+    function setupCanvasDrawing() {
+        ctx.strokeStyle = "#002f6c"; ctx.lineWidth = 3; ctx.lineCap = "round";
+        canvas.addEventListener('mousedown', () => drawing = true);
+        window.addEventListener('mouseup', () => { drawing = false; ctx.beginPath(); });
+        canvas.addEventListener('mousemove', draw);
+        canvas.addEventListener('touchstart', (e) => { drawing = true; e.preventDefault(); }, { passive: false });
+        window.addEventListener('touchend', () => { drawing = false; ctx.beginPath(); });
+        canvas.addEventListener('touchmove', (e) => {
+            if (!drawing) return;
+            const rect = canvas.getBoundingClientRect();
+            const touch = e.touches[0];
+            ctx.lineTo(touch.clientX - rect.left, touch.clientY - rect.top);
+            ctx.stroke(); ctx.beginPath();
+            ctx.moveTo(touch.clientX - rect.left, touch.clientY - rect.top);
+            e.preventDefault();
+        }, { passive: false });
+    }
+
+    function draw(e) {
+        if (!drawing) return;
+        const rect = canvas.getBoundingClientRect();
+        ctx.lineTo(e.clientX - rect.left, e.clientY - rect.top);
+        ctx.stroke(); ctx.beginPath();
+        ctx.moveTo(e.clientX - rect.left, e.clientY - rect.top);
+    }
+
+    function clearCanvas() { ctx.clearRect(0, 0, canvas.width, canvas.height); }
+
+    function formatEuropeanDate(dateStr) {
+        if(!dateStr) return '';
+        const parts = dateStr.split('-');
+        if(parts.length === 3) return `${parts[2]}.${parts[1]}.${parts[0]}`;
+        return dateStr;
+    }
+
+    // --- PDF COMPILER ---
+    async function generateAndDownloadCMR() {
+        try {
+            const fileInput = document.getElementById('pdf_file_input');
+            if (fileInput.files.length === 0) {
+                showToast("⚠️ System Error: Please upload your template file 'template_cmr.pdf' in Step 1 first.", true);
+                return;
+            }
+            showToast("Processing CMR PDF...", false);
+
+            const file = fileInput.files[0];
+            const templateBytes = await file.arrayBuffer();
+            const pdfDoc = await PDFLib.PDFDocument.load(templateBytes);
+            const form = pdfDoc.getForm();
+
+            form.getTextField('field_sender').setText(document.getElementById('field_sender').value);
+            form.getTextField('field_consignee').setText(document.getElementById('field_consignee').value);
+            form.getTextField('field_delivery').setText(document.getElementById('field_delivery').value);
+            form.getTextField('field_takeover').setText(document.getElementById('field_takeover').value);
+            form.getTextField('field_documents').setText(document.getElementById('field_documents').value);
+            form.getTextField('field_carrier').setText(document.getElementById('field_carrier').value);
+            form.getTextField('field_plates').setText(document.getElementById('field_plates').value);
+            form.getTextField('field_adr_check').setText(document.getElementById('field_adr_check').value);
+            form.getTextField('field_established_place').setText(document.getElementById('field_established_place').value);
+            
+            // --- SEAL PROCESSING (Auto "SEAL: " prefix for letters/numbers) ---
+            const sealRawValue = document.getElementById('field_seal').value.trim();
+            const finalSealText = sealRawValue ? "SEAL: " + sealRawValue : "";
+            try { form.getTextField('field_seal').setText(finalSealText); } catch(e) {}
+
+            // --- PAGE INDICATOR PROCESSING ---
+            const pageCur = document.getElementById('page_current').value.trim();
+            const pageTot = document.getElementById('page_total').value.trim();
+            let rawInstructions = document.getElementById('field_instructions').value.trim();
+            
+            if (pageCur && pageTot) {
+                rawInstructions = `* PAGE ${pageCur} OF ${pageTot} *\n` + rawInstructions;
+            } else if (pageCur) {
+                rawInstructions = `* PAGE ${pageCur} *\n` + rawInstructions;
+            }
+            form.getTextField('field_instructions').setText(rawInstructions);
+            
+            // --- DATES ---
+            const dateTakeover = formatEuropeanDate(document.getElementById('field_takeover_date').value);
+            const dateEstablished = formatEuropeanDate(document.getElementById('field_established_date').value);
+            
+            try { form.getTextField('field_takeover_date').setText(dateTakeover); } catch(e) {}
+            try { form.getTextField('field_established_date').setText(dateEstablished); } catch(e) {}
+
+            // --- ROWS MAPPING (Reduced to 7) ---
+            for (let i = 1; i <= 7; i++) {
+                form.getTextField(`flight_${i}`).setText(document.getElementById(`flight_${i}`).value);
+                form.getTextField(`pkgs_${i}`).setText(document.getElementById(`pkgs_${i}`).value);
+                form.getTextField(`packing_${i}`).setText(document.getElementById(`packing_${i}`).value);
+                form.getTextField(`nature_${i}`).setText(document.getElementById(`nature_${i}`).value);
+                form.getTextField(`weight_${i}`).setText(document.getElementById(`weight_${i}`).value);
+            }
+
+            const signatureFieldName = 'field_signature_sender';
+            const sigDataUrl = canvas.toDataURL('image/png');
+            const buffer = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+            const hasSigned = Array.prototype.slice.call(buffer).some(channel => channel !== 0);
+
+            if (hasSigned) {
+                const sigImage = await pdfDoc.embedPng(sigDataUrl);
+                const sigField = form.getTextField(signatureFieldName);
+                if (sigField) {
+                    const widgets = sigField.acroField.getWidgets();
+                    for (let w = 0; w < widgets.length; w++) {
+                        const bounds = widgets[w].getRectangle();
+                        const page = pdfDoc.getPages()[w] || pdfDoc.getPages()[0];
+                        page.drawImage(sigImage, { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height });
+                    }
+                }
+            }
+
+            form.flatten();
+            
+            const pdfBytes = await pdfDoc.save();
+            const blob = new Blob([pdfBytes], { type: "application/pdf" });
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `CMR_FINAL_${Date.now()}.pdf`;
+            link.click();
+            showToast("PDF Exported Successfully!");
+
+        } catch (error) {
+            console.error(error);
+            showToast("Local Processing Error: " + error.message, true);
+        }
+    }
+
+    // ── EXPORT / IMPORT DE DATOS ──────────────────────────────────────────────
+
+    function exportData() {
+        const data = {};
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key.startsWith('cmr_')) {
+                try { data[key] = JSON.parse(localStorage.getItem(key)); }
+                catch(e) { data[key] = localStorage.getItem(key); }
+            }
+        }
+        const json = JSON.stringify(data, null, 2);
+        const blob = new Blob([json], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `CMR_Backup_${new Date().toISOString().split('T')[0]}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast('✅ Data exported successfully!');
+    }
+
+    function importData(input) {
+        const file = input.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const data = JSON.parse(e.target.result);
+                let count = 0;
+                for (const [key, value] of Object.entries(data)) {
+                    if (key.startsWith('cmr_')) {
+                        localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
+                        count++;
+                    }
+                }
+                showToast(`✅ Imported ${count} data entries. Reloading...`);
+                setTimeout(() => location.reload(), 1500);
+            } catch(err) {
+                showToast('❌ Invalid backup file. Please use a valid CMR backup JSON.', true);
+            }
+        };
+        reader.readAsText(file);
+        input.value = '';
+    }
+
+    // ── PWA ───────────────────────────────────────────────────────────────────
+
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('./sw_cmr.js')
+                .then(() => console.log('CMR Tool: Service Worker registered'))
+                .catch(err => console.warn('SW registration failed:', err));
+        });
+    }
+
+</script>
+
+<!-- Footer versión -->
+<div style="max-width:900px; margin:15px auto 0; padding:0 25px; text-align:center; color:#64748b; font-size:11px; font-family:Arial,sans-serif;">
+    <div>🚛 CMR Smart Issuer &nbsp;·&nbsp; v1.0 &nbsp;·&nbsp; 100% Offline &nbsp;·&nbsp; No server required</div>
+    <div style="margin-top:4px;"><a href="https://github.com/Brian24bcn/cargo-transport-tools" target="_blank" style="color:#64748b; text-decoration:none;">github.com/Brian24bcn/cargo-transport-tools</a></div>
+</div>
+
+</body>
+</html>

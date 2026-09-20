@@ -1,0 +1,1949 @@
+<!DOCTYPE html>
+<!-- ADR Transport Tool - Offline Module
+     Calculates ADR exemption limits (1.1.3.6), generates transport documents
+     and preparation checklists. 100% offline — no server required.
+     https://github.com/Brian24bcn/cargo-transport-tools
+-->
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Offline ADR transport document generator. Calculates exemption points (1.1.3.6), generates PDFs and ADR checklists. No server required.">
+    <title>ADR Transport Tool - Offline</title>
+    <!-- Favicon emoji -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📋</text></svg>">
+    <!-- PWA -->
+    <link rel="manifest" href="./manifest_adr.json">
+    <meta name="theme-color" content="#3b82f6">
+    <!-- pdf-lib: CDN (online) — para uso 100% offline descarga pdf-lib.min.js y cambia esta línea a ./pdf-lib.min.js -->
+    <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+    <style>
+        /* Core Variables */
+        :root {
+            --bg-color: #121214; --container-bg: #1a1a1e; --text-color: #e2e8f0; --label-color: #94a3b8;
+            --border-color: #2d2d34; --accent-color: #3b82f6; --accent-hover: #2563eb;
+            --danger-color: #ef4444; --success-color: #10b981; --warning-color: #f59e0b;
+            --input-bg: #26262b; --header-bg: #202024; --stripe-color: rgba(245, 158, 11, 0.03);
+            --calendar-filter: invert(1); --gray-btn: #4b5563;
+        }
+
+        /* Light Mode Overrides */
+        [data-theme="light"] {
+            --bg-color: #f1f5f9; --container-bg: #ffffff; --text-color: #0f172a; --label-color: #475569;
+            --border-color: #cbd5e1; --accent-color: #2563eb; --accent-hover: #1d4ed8;
+            --danger-color: #dc2626; --success-color: #059669; --warning-color: #d97706;
+            --input-bg: #f8fafc; --header-bg: #f1f5f9; --stripe-color: rgba(217, 119, 6, 0.05);
+            --calendar-filter: invert(0); --gray-btn: #64748b;
+        }
+
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; background-color: var(--bg-color); color: var(--text-color); margin: 0; padding: 20px; display: flex; justify-content: center; position: relative; min-height: 100vh; transition: background-color 0.3s ease, color 0.3s ease; }
+        body::before { content: ""; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: repeating-linear-gradient(-45deg, var(--stripe-color) 0, var(--stripe-color) 15px, transparent 15px, transparent 30px); z-index: -1; pointer-events: none; transition: background 0.3s ease; }
+        .container { width: 100%; max-width: 1200px; background-color: var(--container-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 25px; box-shadow: 0 4px 20px rgba(0,0,0,0.2); transition: background-color 0.3s ease, border-color 0.3s ease; }
+        
+        .header-flex { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid var(--border-color); padding-bottom: 10px; margin-bottom: 20px; }
+        h1 { font-size: 22px; margin: 0; display: flex; gap: 15px; align-items: center; }
+        .header-controls { display: flex; gap: 10px; }
+        
+        .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-bottom: 15px; }
+        .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 15px; }
+        .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 20px; }
+        .form-group { display: flex; flex-direction: column; gap: 5px; }
+        label { font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--label-color); transition: color 0.3s ease; }
+        
+        input, select, textarea { background-color: var(--input-bg); border: 1px solid var(--border-color); border-radius: 6px; padding: 10px; color: var(--text-color); font-size: 14px; font-family: inherit; transition: background-color 0.3s, color 0.3s, border-color 0.3s; }
+        textarea { resize: vertical; min-height: 60px; }
+        input[type="date"]::-webkit-calendar-picker-indicator { filter: var(--calendar-filter); cursor: pointer; transition: filter 0.3s; }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th { background-color: var(--input-bg); padding: 10px; font-size: 11px; color: var(--label-color); text-transform: uppercase; text-align: left; transition: background-color 0.3s, color 0.3s; }
+        td { padding: 8px 4px; border-bottom: 1px solid var(--border-color); vertical-align: middle; }
+
+        .ambiguous-row { border: 2px solid var(--warning-color) !important; box-shadow: inset 0 0 8px rgba(245, 158, 11, 0.3); background-color: rgba(245, 158, 11, 0.05); }
+
+        .btn { background-color: var(--accent-color); color: #ffffff; border: none; border-radius: 6px; padding: 10px 18px; font-weight: 600; cursor: pointer; transition: background 0.2s, color 0.2s; }
+        .btn:hover { background-color: var(--accent-hover); }
+        .btn-outline { background-color: transparent; border: 1px solid var(--accent-color); color: var(--accent-color); }
+        .btn-outline:hover { background-color: rgba(59, 130, 246, 0.1); }
+        .btn-gray { background-color: var(--gray-btn); }
+        
+        .summary-box { margin-top: 20px; background-color: var(--input-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 15px; display: flex; justify-content: space-between; align-items: center; transition: background-color 0.3s, border-color 0.3s; }
+        .points-badge { padding: 6px 12px; border-radius: 20px; font-weight: bold; }
+        .badge-safe { background-color: rgba(16, 185, 129, 0.2); color: var(--success-color); }
+        .badge-danger { background-color: rgba(239, 68, 68, 0.2); color: var(--danger-color); }
+
+        /* Estilos del nuevo Breakdown Box */
+        .breakdown-box { background-color: var(--input-bg); border: 1px solid var(--border-color); border-radius: 8px; padding: 10px; flex: 1; text-align: center; transition: background-color 0.3s, border-color 0.3s; }
+        .breakdown-box strong { color: var(--label-color); font-size: 11px; text-transform: uppercase; }
+        .breakdown-box div { font-size: 16px; font-weight: bold; color: var(--text-color); margin-top: 5px; }
+        .breakdown-box .pts-label { font-size: 12px; font-weight: normal; color: var(--label-color); }
+
+        .consolidation-panel { display: none; background-color: rgba(59, 130, 246, 0.05); border: 1px solid var(--accent-color); border-radius: 8px; padding: 15px; margin-top: 15px; }
+        .cons-row { display: flex; gap: 15px; align-items: center; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px dashed var(--border-color); }
+        .cons-row:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
+        .cons-badge { background-color: var(--accent-color); color: white; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 12px; }
+
+        .signature-container { border: 1px solid var(--border-color); background-color: var(--input-bg); border-radius: 6px; width: 100%; max-width: 500px; height: 160px; position: relative; margin: 0 auto; transition: background-color 0.3s, border-color 0.3s; }
+        canvas { width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
+        .clear-sig-btn { position: absolute; top: 5px; right: 5px; background: var(--danger-color); color: white; border: none; font-size: 10px; padding: 3px 6px; border-radius: 4px; cursor: pointer; }
+
+        .section-title { background-color: var(--header-bg); padding: 10px 15px; border-radius: 6px; margin: 25px 0 15px 0; border: 1px solid var(--border-color); font-weight: bold; transition: background-color 0.3s, border-color 0.3s; }
+        .un-details { font-size: 11px; color: var(--accent-color); margin-top: 5px; min-height: 15px; }
+
+        .collapsible-header { background-color: var(--header-bg); padding: 10px 15px; border-radius: 6px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; cursor: pointer; border: 1px solid var(--border-color); font-weight: bold; transition: background-color 0.3s, border-color 0.3s; }
+        .collapsible-header:hover { background-color: var(--input-bg); }
+        .collapsible-content { display: block; overflow: hidden; margin-bottom: 15px; border-left: 3px solid; padding-left: 15px; transition: max-height 0.3s ease-out; }
+        .collapsed { display: none; }
+        
+        .flex-row { display: flex; gap: 5px; }
+
+        /* Checklist Styles */
+        .chk-table { width: 100%; border-collapse: collapse; margin-bottom: 15px; font-size: 13px; }
+        .chk-table td { padding: 8px 12px; border-bottom: 1px solid var(--border-color); }
+        .chk-table tr:hover { background-color: var(--input-bg); }
+        .chk-options { display: flex; gap: 15px; white-space: nowrap; }
+        .chk-options label { font-size: 11px; cursor: pointer; color: var(--text-color); font-weight: 500; display: flex; align-items: center; gap: 4px; }
+        .chk-indent { padding-left: 35px !important; }
+        .chk-header-row td { background-color: var(--header-bg); font-weight: 600; color: var(--accent-color); }
+
+        #toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; gap: 10px; }
+        .toast { background-color: var(--input-bg); border-left: 4px solid var(--accent-color); border-right: 1px solid var(--border-color); border-top: 1px solid var(--border-color); border-bottom: 1px solid var(--border-color); color: var(--text-color); padding: 15px 20px; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); font-size: 14px; opacity: 0; transform: translateX(100%); animation: slideIn 0.3s forwards, fadeOut 0.3s forwards 3s; display: flex; align-items: center; gap: 10px; }
+        .toast.error { border-left-color: var(--danger-color); }
+        .toast.success { border-left-color: var(--success-color); }
+        .toast.warning { border-left-color: var(--warning-color); }
+        @keyframes slideIn { to { opacity: 1; transform: translateX(0); } }
+        @keyframes fadeOut { to { opacity: 0; } }
+
+        /* ── Packaging Autocomplete ── */
+        .pkg-autocomplete { position: relative; width: 95%; }
+        .pkg-autocomplete input { width: 100%; box-sizing: border-box; }
+        .pkg-dropdown {
+            display: none; position: fixed; z-index: 9990;
+            background: var(--input-bg); border: 1px solid var(--accent-color);
+            border-top: none; border-radius: 0 0 6px 6px;
+            max-height: 220px; overflow-y: auto;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+        }
+        .pkg-dropdown-item {
+            padding: 7px 12px; cursor: pointer; font-size: 13px;
+            color: var(--text-color); border-bottom: 1px solid var(--border-color);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .pkg-dropdown-item:last-child { border-bottom: none; }
+        .pkg-dropdown-item:hover, .pkg-dropdown-item.active {
+            background: rgba(59,130,246,0.15); color: var(--accent-color);
+        }
+        .pkg-dropdown-item strong { color: var(--accent-color); font-weight: 700; }
+        .pkg-empty-msg { padding: 8px 12px; font-size: 12px; color: var(--label-color); font-style: italic; }
+
+        /* ── UN Edit Mode ── */
+        .un-edit-mode { border-color: var(--warning-color) !important; }
+
+        /* ══════════════════════════════════════════════════════════
+           RESPONSIVE  —  Mobile & Tablet
+           Touch targets mínimos: 44 × 44 px (Apple HIG / WCAG 2.5.5)
+           font-size ≥ 16px en inputs evita zoom automático en iOS
+           ══════════════════════════════════════════════════════════ */
+
+        /* Scroll wrapper para tablas anchas */
+        .table-scroll-wrapper {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            border-radius: 6px;
+        }
+
+        /* iOS: evita zoom al enfocar inputs */
+        @supports (-webkit-touch-callout: none) {
+            input, select, textarea { font-size: 16px !important; }
+        }
+
+        @media (max-width: 768px) {
+            /* ── Página ── */
+            body { padding: 8px; }
+            .container { padding: 14px; border-radius: 8px; }
+
+            /* ── Header ── */
+            .header-flex { flex-direction: column; align-items: flex-start; gap: 10px; }
+            h1 { font-size: 16px; gap: 8px; }
+            h1 span { font-size: 12px !important; }
+            .header-controls { width: 100%; justify-content: flex-end; flex-wrap: wrap; gap: 6px; }
+            .header-controls .btn { min-height: 44px; padding: 8px 10px; font-size: 11px; }
+
+            /* ── Panel de carga de PDFs ── */
+            .upload-inner { flex-direction: column !important; gap: 12px !important; }
+
+            /* ── Grids → 1 columna ── */
+            .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr !important; gap: 10px; }
+
+            /* ── Grid 4 columnas del Issuance → 2 columnas en tablet ── */
+            .grid-4-col { grid-template-columns: 1fr 1fr !important; }
+
+            /* ── Inputs ── */
+            input, select, textarea { font-size: 16px; padding: 12px; }
+            label { font-size: 10px; }
+            .form-group { gap: 6px; }
+
+            /* ── Tabla cargo: mínimo para scroll fluido ── */
+            .table-scroll-wrapper table { min-width: 680px; }
+            td { padding: 6px 3px; }
+            td input { padding: 9px 6px; font-size: 14px; }
+            th { font-size: 10px; padding: 8px 5px; white-space: nowrap; }
+
+            /* ── Checklist tabla ── */
+            .chk-table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; min-width: 500px; }
+
+            /* ── Summary box ── */
+            .summary-box { flex-direction: column; align-items: flex-start; gap: 10px; }
+
+            /* ── Consolidation panel ── */
+            .cons-row { flex-wrap: wrap; gap: 10px; }
+
+            /* ── Section & collapsible titles ── */
+            .section-title { font-size: 13px; padding: 8px 12px; margin: 18px 0 12px 0; }
+            .collapsible-header { font-size: 13px; padding: 8px 12px; }
+
+            /* ── Flex-row: wrap para no desbordarse ── */
+            .flex-row { flex-wrap: wrap; }
+
+            /* ── Botones táctiles ── */
+            .btn { min-height: 44px; }
+
+            /* ── Packaging autocomplete: items más grandes para dedo ── */
+            .pkg-dropdown-item { padding: 10px 12px; min-height: 44px; display: flex; align-items: center; }
+            .pkg-dropdown { max-height: 200px; }
+
+            /* ── Firma: ancho completo ── */
+            .signature-container { max-width: 100%; height: 150px; }
+
+            /* ── Toast ── */
+            #toast-container { bottom: 10px; right: 8px; left: 8px; }
+            .toast { font-size: 13px; padding: 12px 16px; }
+        }
+
+        @media (max-width: 480px) {
+            body { padding: 4px; }
+            .container { padding: 10px; border-radius: 6px; }
+            h1 { font-size: 14px; }
+            h1 span { display: none !important; }
+            .grid-4-col { grid-template-columns: 1fr !important; }
+            .header-controls .btn span[data-i18n] { display: none; }
+            .header-controls .btn span#theme_icon { display: inline; }
+            .header-controls .btn span#lang_label { display: inline; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header-flex">
+        <h1>ADR Transport Document <span style="font-size: 14px; font-weight: normal; color: var(--accent-color);">Offline Module</span></h1>
+        <div class="header-controls">
+            <button class="btn btn-outline" onclick="hardResetApp()" style="font-size: 12px; padding: 6px 12px; border-color: var(--danger-color); color: var(--danger-color);" title="Permanently deletes address book, UN database and all settings">🗑️ Wipe All Saved Data</button>
+            <button class="btn btn-outline" onclick="toggleTheme()" style="font-size: 12px; padding: 6px 12px; display: flex; align-items: center; gap: 5px;">
+                <span id="theme_icon">☀️</span> <span data-i18n="theme_btn">Light/Dark</span>
+            </button>
+            <button class="btn btn-outline" onclick="toggleLanguage()" style="font-size: 12px; padding: 6px 12px;">🌐 <span id="lang_label">EN</span> / DE</button>
+        </div>
+    </div>
+    
+    <div style="background-color: var(--header-bg); padding: 15px; border-radius: 8px; margin-bottom: 20px; border: 1px dashed var(--accent-color); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+        <div class="upload-inner" style="display: flex; gap: 30px; flex-grow: 1;">
+            <div>
+                <label data-i18n="load_pdf" style="color: var(--accent-color); display: block;">1. Load ADR Form Template (Required)</label>
+                <input type="file" id="pdf_upload" accept=".pdf" style="margin-top: 5px; background: transparent; border: none; padding: 0;">
+            </div>
+            <div>
+                <label data-i18n="load_chk" style="color: var(--warning-color); display: block;">2. Load Checklist Template (Optional)</label>
+                <input type="file" id="chk_upload" accept=".pdf" style="margin-top: 5px; background: transparent; border: none; padding: 0;">
+            </div>
+        </div>
+        <button class="btn btn-outline" data-i18n="reset_btn" style="font-size: 12px; padding: 8px 12px; border-color: var(--danger-color); color: var(--danger-color);" onclick="resetForm()">Reset Cargo Items</button>
+    </div>
+
+    <div class="section-title" data-i18n="address_title" style="color: var(--success-color); border-color: var(--success-color);">🏢 Address Book & Flight Info</div>
+    
+    <div class="grid-3">
+        <div class="form-group">
+            <label data-i18n="lbl_saved_senders">Saved Senders</label>
+            <div class="flex-row">
+                <select id="sel_sender" onchange="loadAddress('sender')" style="flex-grow: 1;"></select>
+                <button class="btn btn-outline" style="border-color: var(--danger-color); color: var(--danger-color); padding: 5px 10px;" onclick="deleteAddress('sender')" title="Delete selected">🗑️</button>
+            </div>
+            <button class="btn btn-outline" data-i18n="btn_save_sender" style="font-size: 10px; margin-top: 5px;" onclick="saveNewAddress('sender')">+ Save Active to List</button>
+        </div>
+        <div class="form-group">
+            <label data-i18n="lbl_saved_cons">Saved Consignees</label>
+            <div class="flex-row">
+                <select id="sel_consignee" onchange="loadAddress('consignee')" style="flex-grow: 1;"></select>
+                <button class="btn btn-outline" style="border-color: var(--danger-color); color: var(--danger-color); padding: 5px 10px;" onclick="deleteAddress('consignee')" title="Delete selected">🗑️</button>
+            </div>
+            <button class="btn btn-outline" data-i18n="btn_save_cons" style="font-size: 10px; margin-top: 5px;" onclick="saveNewAddress('consignee')">+ Save Active to List</button>
+        </div>
+        <div class="form-group">
+            <label data-i18n="lbl_saved_carr">Saved Carriers</label>
+            <div class="flex-row">
+                <select id="sel_carrier" onchange="loadAddress('carrier')" style="flex-grow: 1;"></select>
+                <button class="btn btn-outline" style="border-color: var(--danger-color); color: var(--danger-color); padding: 5px 10px;" onclick="deleteAddress('carrier')" title="Delete selected">🗑️</button>
+            </div>
+            <button class="btn btn-outline" data-i18n="btn_save_carr" style="font-size: 10px; margin-top: 5px;" onclick="saveNewAddress('carrier')">+ Save Active to List</button>
+        </div>
+    </div>
+
+    <div class="grid-3">
+        <div class="form-group"><label data-i18n="lbl_act_sender">Active Sender</label><textarea id="active_sender" placeholder="Name&#10;Street&#10;City" onchange="saveSimpleMemory()"></textarea></div>
+        <div class="form-group"><label data-i18n="lbl_act_cons">Active Consignee</label><textarea id="active_consignee" placeholder="Name&#10;Street&#10;City" onchange="saveSimpleMemory()"></textarea></div>
+        <div class="form-group"><label data-i18n="lbl_act_carr">Active Carrier</label><textarea id="active_carrier" onchange="saveSimpleMemory()"></textarea></div>
+    </div>
+
+    <div class="grid-3" style="margin-top: 5px;">
+        <div class="form-group">
+            <label data-i18n="lbl_ref" style="color: var(--accent-color);">Transport Reference (Flight/Date)</label>
+            <input type="text" id="ref_no" style="border-color: var(--accent-color);">
+        </div>
+        <div class="form-group" style="grid-column: span 2;">
+            <label data-i18n="lbl_plates" style="color: var(--accent-color);">Vehicle Registration Details</label>
+            <textarea id="vehicle_plates" placeholder="Truck: XX-AB 1234&#10;Trailer: XX-CD 5678" onchange="saveSimpleMemory()" style="min-height: 40px; border-color: var(--accent-color);"></textarea>
+        </div>
+    </div>
+
+    <div class="collapsible-header" style="border-color: var(--accent-color); color: var(--accent-color); margin-top: 25px;" onclick="togglePanel('pkg_db_panel', 'pkg_arrow')">
+        <span data-i18n="pkg_title">📦 Manage Packaging Database</span>
+        <span id="pkg_arrow">▶ Expand</span>
+    </div>
+    <div id="pkg_db_panel" class="collapsible-content collapsed" style="border-color: var(--accent-color);">
+        <div style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px dashed var(--border-color);">
+            <label data-i18n="pkg_delete_lbl" style="color: var(--danger-color); display: block; margin-bottom: 5px;">Delete Saved Packaging</label>
+            <div class="flex-row" style="max-width: 500px;">
+                <select id="sel_delete_pkg" style="flex-grow: 1;">
+                    <option value="">-- Select packaging to delete --</option>
+                </select>
+                <button class="btn btn-outline" data-i18n="btn_delete_pkg" style="border-color: var(--danger-color); color: var(--danger-color); padding: 5px 15px;" onclick="deletePackaging()">🗑️ Delete</button>
+            </div>
+        </div>
+        <label data-i18n="pkg_add_lbl" style="color: var(--accent-color); display: block; margin-bottom: 10px;">Add New Packaging</label>
+        <div class="flex-row" style="max-width: 500px;">
+            <input type="text" id="new_pkg_input" placeholder="e.g. Composite Receptacle" style="flex-grow: 1;">
+            <button class="btn btn-outline" data-i18n="btn_save_pkg" style="border-color: var(--success-color); color: var(--success-color); padding: 5px 15px;" onclick="addPackaging()">➕ Save</button>
+        </div>
+    </div>
+
+    <div class="collapsible-header" style="border-color: var(--warning-color); color: var(--warning-color); margin-top: 10px;" onclick="togglePanel('db_panel', 'db_arrow')">
+        <span data-i18n="db_title">⚙️ Manage UN Database</span>
+        <span id="db_arrow">▶ Expand</span>
+    </div>
+    <div id="db_panel" class="collapsible-content collapsed" style="border-color: var(--warning-color);">
+        <div style="margin-bottom: 15px; padding-bottom: 15px; border-bottom: 1px dashed var(--border-color);">
+            <label data-i18n="db_delete_lbl" style="color: var(--danger-color); display: block; margin-bottom: 5px;">Select UN to Edit or Delete</label>
+            <div class="flex-row" style="max-width: 600px;">
+                <select id="sel_delete_un" style="flex-grow: 1;">
+                    <option value="">-- Select UN --</option>
+                </select>
+                <button class="btn btn-outline" style="border-color: var(--warning-color); color: var(--warning-color); padding: 5px 12px;" onclick="editSelectedUN()" title="Load this UN into the form to edit it">📝 Edit</button>
+                <button class="btn btn-outline" data-i18n="btn_delete" style="border-color: var(--danger-color); color: var(--danger-color); padding: 5px 12px;" onclick="deleteCustomUN()">🗑️ Delete</button>
+            </div>
+        </div>
+        <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 10px;">
+            <label id="db_mode_label" data-i18n="db_add_lbl" style="color: var(--warning-color);">Add New UN to Memory</label>
+            <button id="btn_cancel_edit" class="btn btn-outline" style="display:none; font-size:11px; padding:4px 10px; border-color:var(--label-color); color:var(--label-color);" onclick="cancelEditUN()">✕ Cancel Edit</button>
+        </div>
+        <div class="grid-4">
+            <div class="form-group"><label>UN Number</label><input type="number" id="db_un" placeholder="e.g. 1415"></div>
+            <div class="form-group"><label data-i18n="db_chem_name">Chemical Name</label><input type="text" id="db_name" placeholder="e.g. LITHIUM"></div>
+            <div class="form-group"><label data-i18n="db_class">Class</label><input type="text" id="db_class" placeholder="e.g. 4.3"></div>
+            <div class="form-group"><label>PG</label><select id="db_pg"><option value="I">I</option><option value="II">II</option><option value="III">III</option><option value="-">-</option></select></div>
+            <div class="form-group"><label data-i18n="db_sub1">Sub-Class 1 (Opt)</label><input type="text" id="db_sub1" placeholder="e.g. 3"></div>
+            <div class="form-group"><label data-i18n="db_sub2">Sub-Class 2 (Opt)</label><input type="text" id="db_sub2" placeholder="e.g. 8"></div>
+            <div class="form-group"><label data-i18n="db_tunnel">Tunnel Code</label><input type="text" id="db_tunnel" placeholder="e.g. B/E"></div>
+            <div class="form-group"><label data-i18n="db_cat">Transport Category</label><input type="number" id="db_cat" min="0" max="4" placeholder="e.g. 1"></div>
+            <div class="form-group">
+                <label>Default Unit</label>
+                <select id="db_unit">
+                    <option value="-" selected>- (Both / Unknown)</option>
+                    <option value="L">L (Liquid)</option>
+                    <option value="kg">kg (Solid / Weight)</option>
+                </select>
+            </div>
+        </div>
+        <div style="margin-top: 10px;">
+            <button class="btn" id="btn_save_un" data-i18n="btn_save_un" style="background-color: var(--warning-color); color: #000000;" onclick="saveCustomUN()">➕ Save UN</button>
+        </div>
+    </div>
+
+    <!-- ⚡ QUICK CHECK -->
+    <div class="section-title" style="color: var(--warning-color); border-color: var(--warning-color); cursor: pointer; display: flex; justify-content: space-between; align-items: center;" onclick="togglePanel('qc_panel', 'qc_arrow')">
+        <span>⚡ Quick Check — ADR Points Calculator</span>
+        <span id="qc_arrow" style="font-size: 12px; font-weight: normal;">▶ Expand</span>
+    </div>
+    <div id="qc_panel" class="collapsible-content collapsed">
+        <div class="section" style="margin-top: 0; border-color: var(--warning-color); border-top: none; border-radius: 0 0 8px 8px;">
+            <p style="font-size: 13px; color: var(--label-color); margin-bottom: 15px;">Fast check without filling the full document. Enter UN numbers or names and quantities to see total ADR points instantly.</p>
+
+            <div class="table-scroll-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width:50%;">UN Number or Name</th>
+                        <th style="width:20%;">Net Qty</th>
+                        <th style="width:12%;">Unit</th>
+                        <th style="width:13%; text-align:center;">Points</th>
+                        <th style="width:5%;"></th>
+                    </tr>
+                </thead>
+                <tbody id="qc_tbody"></tbody>
+            </table>
+            </div>
+
+            <div style="margin-top: 12px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                <button class="btn btn-outline" onclick="addQuickRow()" style="padding: 8px 16px; font-size: 13px;">+ Add Row</button>
+                <button class="btn btn-outline" onclick="clearQuickCheck()" style="padding: 8px 16px; font-size: 13px; border-color: var(--label-color); color: var(--label-color);">🗑️ Clear</button>
+                <button class="btn" onclick="transferToMain()" style="padding: 8px 16px; font-size: 13px; background: var(--accent-color);" title="Copy values to the main cargo table below">📋 Transfer to main form</button>
+            </div>
+
+            <div style="margin-top: 18px; padding: 16px; background: var(--bg-secondary); border-radius: 8px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                <div>
+                    <span style="font-size: 13px; color: var(--label-color);">Total ADR Points:</span>
+                    <span id="qc_total" style="font-size: 28px; font-weight: 800; color: var(--accent-color); margin-left: 12px;">0</span>
+                    <span style="font-size: 13px; color: var(--label-color); margin-left: 4px;">/ 1000</span>
+                </div>
+                <div id="qc_status" style="font-size: 14px; font-weight: 600; color: var(--label-color);">Enter UN numbers and quantities above</div>
+            </div>
+        </div>
+    </div>
+
+    <h3 data-i18n="cargo_title" style="margin-top: 30px;">2. Dangerous Goods Items</h3>
+    
+    <datalist id="un_database"></datalist>
+
+    <div class="table-scroll-wrapper">
+    <table>
+        <thead>
+            <tr>
+                <th data-i18n="th_awb" style="width: 12%;">Reference / AWB</th>
+                <th data-i18n="th_pkgs" style="width: 6%;">Pkgs</th>
+                <th data-i18n="th_pack" style="width: 16%;">Packaging</th>
+                <th data-i18n="th_search" style="width: 25%;">UN Number or Name</th>
+                <th data-i18n="th_qty" style="width: 11%;">Net Qty</th>
+                <th style="width: 8%;">Unit</th>
+                <th data-i18n="th_group" style="width: 14%;">Group</th>
+                <th style="width: 8%; text-align: center;">🗑️</th>
+            </tr>
+        </thead>
+        <tbody id="items_tbody">
+            <tr class="ambiguous-row">
+                <td><input type="text" class="row-awb" placeholder="Ref. / AWB" style="width:90%;"></td>
+                <td><input type="number" class="row-pkgs" value="1" style="width:80%;" oninput="updateTotals()"></td>
+                <td>
+                    <div class="pkg-autocomplete">
+                        <input type="text" class="row-packtype" placeholder="Type packaging…" autocomplete="off"
+                               onfocus="filterPkgDropdown(this)"
+                               oninput="filterPkgDropdown(this)"
+                               onkeydown="handlePkgKeydown(event,this)"
+                               onblur="hidePkgDropdown(this,200)">
+                        <div class="pkg-dropdown"></div>
+                    </div>
+                </td>
+                <td>
+                    <input type="text" list="un_database" class="row-un-input" placeholder="1415 or lithium..." style="width:95%;" onchange="updateRowDetails(this)" onfocus="this.select()">
+                    <div class="un-details"></div>
+                </td>
+                <td><input type="number" class="row-qty" value="0" step="0.001" style="width:85%;" oninput="updateTotals()"></td>
+                <td>
+                    <select class="row-unit" style="width:90%;" onchange="handleUnitChange(this)">
+                        <option value="-" selected>-</option>
+                        <option value="L">L</option>
+                        <option value="kg">kg</option>
+                    </select>
+                </td>
+                <td>
+                    <select class="row-group" style="width:95%;" onchange="updateConsolidations()"></select>
+                </td>
+                <td style="text-align: center;">
+                    <button class="btn btn-outline" style="padding: 6px 10px; border-color: var(--danger-color); color: var(--danger-color);" onclick="deleteRow(this)">🗑️</button>
+                </td>
+            </tr>
+        </tbody>
+    </table>
+    </div>
+
+    <div style="margin-top: 10px;">
+        <button class="btn btn-gray" data-i18n="btn_add_row" type="button" onclick="addRow()">+ Add Row</button>
+    </div>
+
+    <div id="consolidation_panel" class="consolidation-panel">
+        <h4 style="margin-top:0; margin-bottom:15px; color:var(--accent-color);" data-i18n="cons_title">📦 Consolidations Configuration</h4>
+        <div id="cons_container"></div>
+    </div>
+
+    <div class="summary-box">
+        <div><strong data-i18n="adr_points">ADR Points: </strong><span id="points_text">0</span> / 1000 Pts</div>
+        <div id="status_badge" class="points-badge badge-safe">EXEMPT (1.1.3.6)</div>
+    </div>
+
+    <div id="points_breakdown" style="display: flex; gap: 10px; margin-top: 10px; width: 100%;">
+        <div class="breakdown-box"><strong>Cat 0</strong><div><span id="pt_cat0">0</span></div></div>
+        <div class="breakdown-box"><strong>Cat 1 <span style="font-size:10px">(x50)</span></strong><div><span id="pt_cat1">0</span> <span class="pts-label">pts</span></div></div>
+        <div class="breakdown-box"><strong>Cat 2 <span style="font-size:10px">(x3)</span></strong><div><span id="pt_cat2">0</span> <span class="pts-label">pts</span></div></div>
+        <div class="breakdown-box"><strong>Cat 3 <span style="font-size:10px">(x1)</span></strong><div><span id="pt_cat3">0</span> <span class="pts-label">pts</span></div></div>
+        <div class="breakdown-box"><strong>Cat 4 <span style="font-size:10px">(x0)</span></strong><div><span id="pt_cat4">0</span> <span class="pts-label">pts</span></div></div>
+    </div>
+
+    <div style="margin-top: 10px; background-color: var(--input-bg); border: 1px dashed var(--warning-color); padding: 10px 15px; border-radius: 6px; display: flex; align-items: center; gap: 10px;">
+        <input type="checkbox" id="force_full_adr" onchange="updateTotals()" style="width: 18px; height: 18px; cursor: pointer;">
+        <label for="force_full_adr" style="color: var(--warning-color); font-size: 13px; text-transform: none; cursor: pointer;">
+            <strong data-i18n="lbl_force_adr">Vehicle carries other ADR cargo (>1000 pts total in truck)</strong>
+        </label>
+    </div>
+
+    <div class="section-title" data-i18n="chk_title" style="color: var(--warning-color); border-color: var(--warning-color); margin-top: 35px;">✅ ADR Preparation Checklist</div>
+    <table class="chk-table" id="chk_table">
+        <tr class="chk-header-row"><td colspan="2" data-i18n="chk_hdr_doc">To be checked from the documentation:</td></tr>
+        <tr class="chk-row" id="row_chk_1">
+            <td data-i18n="chk_q1">1) Transport document or transport according to ADR 1.1.4.2.1 with DGD</td>
+            <td><div class="chk-options"><label><input type="radio" name="chk_1" value="yes">YES</label><label><input type="radio" name="chk_1" value="no">NO</label></div></td>
+        </tr>
+        <tr class="chk-row" id="row_chk_2">
+            <td data-i18n="chk_q2">2) Dangerous goods are already on the transport unit and calculated</td>
+            <td><div class="chk-options"><label><input type="radio" name="chk_2" value="yes">YES</label><label><input type="radio" name="chk_2" value="no">NO</label><label><input type="radio" name="chk_2" value="na">NA</label></div></td>
+        </tr>
+        <tr class="chk-row" id="row_chk_3">
+            <td data-i18n="chk_q3">3) Each crew member has a valid driving licence and photo ID</td>
+            <td><div class="chk-options"><label><input type="radio" name="chk_3" value="yes">YES</label><label><input type="radio" name="chk_3" value="no">NO</label></div></td>
+        </tr>
+        <tr class="chk-row" id="row_chk_4">
+            <td data-i18n="chk_q4">4) Shipments of Class 1: valid certificate of competence available</td>
+            <td><div class="chk-options"><label><input type="radio" name="chk_4" value="yes">YES</label><label><input type="radio" name="chk_4" value="no">NO</label><label><input type="radio" name="chk_4" value="na">NA</label></div></td>
+        </tr>
+        <tr class="chk-row" id="row_chk_5">
+            <td data-i18n="chk_q5">5) For Class 7 shipments: transport authorisation available</td>
+            <td><div class="chk-options"><label><input type="radio" name="chk_5" value="yes">YES</label><label><input type="radio" name="chk_5" value="no">NO</label><label><input type="radio" name="chk_5" value="na">NA</label></div></td>
+        </tr>
+        <tr class="chk-row" id="row_chk_6">
+            <td data-i18n="chk_q6">6) Total >1000 points or Class 7: Valid training certificate (ADR 8.2)</td>
+            <td><div class="chk-options"><label><input type="radio" name="chk_6" value="yes">YES</label><label><input type="radio" name="chk_6" value="no">NO</label><label><input type="radio" name="chk_6" value="na">NA</label></div></td>
+        </tr>
+        <tr class="chk-row" id="row_chk_7">
+            <td data-i18n="chk_q7">7) Written instructions</td>
+            <td><div class="chk-options"><label><input type="radio" name="chk_7" value="yes">YES</label><label><input type="radio" name="chk_7" value="no">NO</label></div></td>
+        </tr>
+        
+        <tr class="chk-header-row"><td colspan="2" data-i18n="chk_hdr_wh">To be checked by the loader:</td></tr>
+        <tr class="chk-row" id="row_chk_8">
+            <td data-i18n="chk_q8">8) Only undamaged packages handed over & segregation observed</td>
+            <td><div class="chk-options"><label><input type="radio" name="chk_8" value="yes">YES</label><label><input type="radio" name="chk_8" value="no">NO</label></div></td>
+        </tr>
+        <tr class="chk-row" id="row_chk_9">
+            <td data-i18n="chk_q9">9) Transport ≤ 1000 points</td>
+            <td><div class="chk-options"><label><input type="radio" name="chk_9" value="yes">YES</label><label><input type="radio" name="chk_9" value="no">NO</label><label><input type="radio" name="chk_9" value="na">NA</label></div></td>
+        </tr>
+        <tr class="chk-row chk-indent" id="row_chk_9a">
+            <td data-i18n="chk_q9a">a) 1 x fire extinguisher min. 2 kg, sealed and inspected</td>
+            <td><div class="chk-options"><label><input type="radio" name="chk_9a" value="yes">YES</label><label><input type="radio" name="chk_9a" value="no">NO</label></div></td>
+        </tr>
+        <tr class="chk-row" id="row_chk_10">
+            <td data-i18n="chk_q10">10) Transport > 1000 points or Class 7:</td>
+            <td><div class="chk-options"><label><input type="radio" name="chk_10" value="yes">YES</label><label><input type="radio" name="chk_10" value="no">NO</label><label><input type="radio" name="chk_10" value="na">NA</label></div></td>
+        </tr>
+        <tr class="chk-row chk-indent" id="row_chk_10a">
+            <td data-i18n="chk_q10a">a) Marking of the transport unit front and rear with orange plates</td>
+            <td><div class="chk-options"><label><input type="radio" name="chk_10a" value="yes">YES</label><label><input type="radio" name="chk_10a" value="no">NO</label></div></td>
+        </tr>
+        <tr class="chk-row chk-indent" id="row_chk_10b">
+            <td data-i18n="chk_q10b">b) Class 1 and Class 7: additionally placards on the sides and rear</td>
+            <td><div class="chk-options"><label><input type="radio" name="chk_10b" value="yes">YES</label><label><input type="radio" name="chk_10b" value="no">NO</label><label><input type="radio" name="chk_10b" value="na">NA</label></div></td>
+        </tr>
+        <tr class="chk-row chk-indent" id="row_chk_10c">
+            <td data-i18n="chk_q10c">c) Fire extinguishers (capacity per tonnage), sealed and inspected</td>
+            <td><div class="chk-options"><label><input type="radio" name="chk_10c" value="yes">YES</label><label><input type="radio" name="chk_10c" value="no">NO</label></div></td>
+        </tr>
+        <tr class="chk-row chk-indent" id="row_chk_10d">
+            <td data-i18n="chk_q10d">d) Protective equipment according to written instructions</td>
+            <td><div class="chk-options"><label><input type="radio" name="chk_10d" value="yes">YES</label><label><input type="radio" name="chk_10d" value="no">NO</label></div></td>
+        </tr>
+        <tr class="chk-row chk-indent" id="row_chk_10e">
+            <td data-i18n="chk_q10e">e) Prohibition of passenger transport observed</td>
+            <td><div class="chk-options"><label><input type="radio" name="chk_10e" value="yes">YES</label><label><input type="radio" name="chk_10e" value="no">NO</label></div></td>
+        </tr>
+        <tr class="chk-row" id="row_chk_11">
+            <td data-i18n="chk_q11">11) No obvious defects found in load securing or on the vehicle</td>
+            <td><div class="chk-options"><label><input type="radio" name="chk_11" value="yes">YES</label><label><input type="radio" name="chk_11" value="no">NO</label></div></td>
+        </tr>
+        <tr class="chk-row" id="row_chk_12">
+            <td data-i18n="chk_q12">12) Visual inspection carried out for dangerous goods already loaded</td>
+            <td><div class="chk-options"><label><input type="radio" name="chk_12" value="yes">YES</label><label><input type="radio" name="chk_12" value="no">NO</label></div></td>
+        </tr>
+    </table>
+
+    <div class="section-title" data-i18n="sign_title" style="color: var(--label-color); border-color: var(--label-color);">✍️ Issuance & Signatures</div>
+
+    <div class="grid-4-col" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 15px;">
+        <div class="form-group"><label data-i18n="lbl_company">Company / Issuing Station</label><input type="text" id="office_company" placeholder="e.g. My Cargo GmbH" onchange="saveSimpleMemory()"></div>
+        <div class="form-group"><label data-i18n="lbl_place">Office Issuance Place</label><input type="text" id="office_place" value="" placeholder="City / Location" onchange="saveSimpleMemory()"></div>
+        <div class="form-group"><label data-i18n="lbl_date">Office Issuance Date</label><input type="date" id="office_date"></div>
+        <div class="form-group"><label data-i18n="lbl_agent">Office Agent Name</label><input type="text" id="office_agent" onchange="saveSimpleMemory()"></div>
+    </div>
+
+    <div class="grid-3">
+        <div class="form-group"><label data-i18n="lbl_loader">Warehouse Loader Name (Printed)</label><input type="text" id="loader_agent" onchange="saveSimpleMemory()"></div>
+        <div class="form-group" style="grid-column: span 2; display: flex; align-items: center; justify-content: center; flex-direction: column;">
+            <label data-i18n="lbl_sig" style="align-self: flex-start; margin-left: 10%;">Office Agent Signature</label>
+            <div class="signature-container">
+                <button type="button" data-i18n="btn_clear" class="clear-sig-btn" onclick="clearSignature()">Clear</button>
+                <canvas id="sig_canvas"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <div style="margin-top: 25px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+        <button class="btn btn-outline" onclick="newDocument()" style="padding: 12px 24px; font-size: 14px; border-color: var(--label-color); color: var(--label-color);" title="Clear current form — saved data is kept">📄 New Document</button>
+        <button class="btn" data-i18n="btn_generate" style="padding: 14px 30px; font-size: 15px;" onclick="generateADR(this)">🚀 Generate PDF</button>
+    </div>
+
+    <!-- Footer versión -->
+    <div style="margin-top:30px; padding-top:15px; border-top:1px solid var(--border-color); text-align:center; color:var(--label-color); font-size:11px;">
+        <div>📋 ADR Transport Tool &nbsp;·&nbsp; v1.0 &nbsp;·&nbsp; 100% Offline &nbsp;·&nbsp; No server required</div>
+        <div style="margin-top:4px;"><a href="https://github.com/Brian24bcn/cargo-transport-tools" target="_blank" style="color:var(--label-color); text-decoration:none;">github.com/Brian24bcn/cargo-transport-tools</a></div>
+    </div>
+</div>
+
+<div id="toast-container"></div>
+
+<script>
+    // --- THEME & RESET SYSTEM ---
+    function initTheme() {
+        const savedTheme = localStorage.getItem('adr_theme') || 'dark';
+        document.documentElement.setAttribute('data-theme', savedTheme);
+        updateThemeIcon(savedTheme);
+    }
+
+    function toggleTheme() {
+        const current = document.documentElement.getAttribute('data-theme');
+        const nextTheme = current === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', nextTheme);
+        localStorage.setItem('adr_theme', nextTheme);
+        updateThemeIcon(nextTheme);
+        resizeCanvas();
+    }
+
+    function updateThemeIcon(theme) {
+        document.getElementById('theme_icon').innerText = theme === 'dark' ? '☀️' : '🌙';
+    }
+
+    function newDocument() {
+        // Limpia el formulario actual — NO borra el address book ni la base de datos
+        const tbody = document.getElementById('items_tbody');
+        while (tbody.rows.length > 1) tbody.deleteRow(1);
+        const firstRow = tbody.rows[0];
+        firstRow.querySelector('.row-awb').value = '';
+        firstRow.querySelector('.row-qty').value = 0;
+        firstRow.querySelector('.row-un-input').value = '';
+        firstRow.querySelector('.row-unit').value = '-';
+        firstRow.querySelector('.row-unit').removeAttribute('data-default-unit');
+        firstRow.querySelector('.row-group').value = 'none';
+        firstRow.querySelector('.un-details').innerText = '';
+        const pkgInput = firstRow.querySelector('.row-packtype');
+        if (pkgInput) pkgInput.value = '';
+
+        document.getElementById('ref_no').value = '';
+        document.getElementById('vehicle_plates').value = '';
+        document.getElementById('active_sender').value = '';
+        document.getElementById('active_consignee').value = '';
+        document.getElementById('active_carrier').value = '';
+
+        // Limpiar firma
+        const canvas = document.getElementById('sig_canvas');
+        if (canvas) { const ctx = canvas.getContext('2d'); ctx.clearRect(0, 0, canvas.width, canvas.height); }
+
+        clearQuickCheck();
+        updateTotals();
+        updateConsolidations();
+        showToast('📄 New document — saved data kept');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function hardResetApp() {
+        if(confirm("⚠️ WIPE ALL SAVED DATA\n\nThis will permanently delete:\n• Address book (senders, consignees, carriers)\n• Custom UN database\n• Packaging database\n• All saved settings\n\nThe current document will also be cleared.\nThis cannot be undone. Continue?")) {
+            localStorage.clear();
+            location.reload();
+        }
+    }
+
+    window.addEventListener('beforeunload', function (e) {
+        e.preventDefault(); e.returnValue = '';
+    });
+
+    function showToast(message, type = 'success') {
+        const container = document.getElementById('toast-container');
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        let icon = type === 'success' ? '✅' : type === 'error' ? '❌' : '⚠️';
+        toast.innerHTML = `<span>${icon}</span> <span>${message}</span>`;
+        container.appendChild(toast);
+        setTimeout(() => { toast.remove(); }, 3500);
+    }
+
+    // --- DICTIONARY ---
+    let currentLang = 'EN';
+    const dict = {
+        'EN': {
+            theme_btn: 'Theme', load_pdf: '1. Load ADR Form Template (Required)', load_chk: '2. Load Checklist Template (Optional)', reset_btn: 'Reset Cargo Items', address_title: '🏢 Address Book & Flight Info',
+            lbl_saved_senders: 'Saved Senders', lbl_saved_cons: 'Saved Consignees', lbl_saved_carr: 'Saved Carriers',
+            btn_save_sender: '+ Save Active to List', btn_save_cons: '+ Save Active to List', btn_save_carr: '+ Save Active to List',
+            lbl_act_sender: 'Active Sender', lbl_act_cons: 'Active Consignee', lbl_act_carr: 'Active Carrier',
+            lbl_ref: 'Transport Reference (Flight/Date)', lbl_plates: 'Vehicle Registration Details', 
+            pkg_title: '📦 Manage Packaging Database', pkg_delete_lbl: 'Delete Saved Packaging', btn_delete_pkg: '🗑️ Delete', pkg_add_lbl: 'Add New Packaging', btn_save_pkg: '➕ Save',
+            db_title: '⚙️ Manage UN Database', db_delete_lbl: 'Delete Saved UN', btn_delete: '🗑️ Delete', db_add_lbl: 'Add New UN to Memory', db_chem_name: 'Chemical Name', db_class: 'Class',
+            db_sub1: 'Sub-Class 1 (Opt)', db_sub2: 'Sub-Class 2 (Opt)', db_tunnel: 'Tunnel Code', db_cat: 'Transport Category', btn_save_un: '➕ Save UN',
+            cargo_title: '2. Dangerous Goods Items', th_awb: 'Reference / AWB', th_pkgs: 'Pkgs', th_pack: 'Packaging',
+            th_search: 'UN Number or Name', th_qty: 'Net Qty', th_group: 'Group', btn_add_row: '+ Add Row', adr_points: 'ADR Points: ',
+            lbl_force_adr: 'Vehicle carries other ADR cargo (>1000 pts total in truck)', cons_title: '📦 Consolidations Configuration',
+            chk_title: '✅ ADR Preparation Checklist', chk_hdr_doc: 'To be checked from the documentation:',
+            chk_q1: '1) Transport document or transport according to ADR 1.1.4.2.1 with DGD', chk_q2: '2) Dangerous goods are already on the transport unit and calculated',
+            chk_q3: '3) Each crew member has a valid driving licence and photo ID', chk_q4: '4) Shipments of Class 1: valid certificate of competence available',
+            chk_q5: '5) For Class 7 shipments: transport authorisation available', chk_q6: '6) Total >1000 points or Class 7: Valid training certificate (ADR 8.2)',
+            chk_q7: '7) Written instructions', chk_hdr_wh: 'To be checked by the loader:',
+            chk_q8: '8) Only undamaged packages handed over & segregation observed', chk_q9: '9) Transport ≤ 1000 points',
+            chk_q9a: 'a) 1 x fire extinguisher min. 2 kg, sealed and inspected', chk_q10: '10) Transport > 1000 points or Class 7:',
+            chk_q10a: 'a) Marking of the transport unit front and rear with orange plates', chk_q10b: 'b) Class 1 and Class 7: additionally placards on the sides and rear',
+            chk_q10c: 'c) Fire extinguishers (capacity per tonnage), sealed and inspected', chk_q10d: 'd) Protective equipment according to written instructions',
+            chk_q10e: 'e) Prohibition of passenger transport observed', chk_q11: '11) No obvious defects found in load securing or on the vehicle',
+            chk_q12: '12) Visual inspection carried out for dangerous goods already loaded',
+            sign_title: '✍️ Issuance & Signatures', lbl_company: 'Company / Issuing Station', lbl_place: 'Office Issuance Place', lbl_date: 'Office Issuance Date',
+            lbl_agent: 'Office Agent Name', lbl_loader: 'Warehouse Loader Name', lbl_sig: 'Office Agent Signature', btn_clear: 'Clear', btn_generate: '🚀 Generate PDF'
+        },
+        'DE': {
+            theme_btn: 'Design', load_pdf: '1. ADR-Vorlage laden (Erforderlich)', load_chk: '2. Checklisten-Vorlage laden (Optional)', reset_btn: 'Felder leeren', address_title: '🏢 Adressbuch & Fluginformationen',
+            lbl_saved_senders: 'Gespeicherte Absender', lbl_saved_cons: 'Gespeicherte Empfänger', lbl_saved_carr: 'Gespeicherte Frachtführer',
+            btn_save_sender: '+ Zur Liste hinzufügen', btn_save_cons: '+ Zur Liste hinzufügen', btn_save_carr: '+ Zur Liste hinzufügen',
+            lbl_act_sender: 'Aktiver Absender', lbl_act_cons: 'Aktiver Empfänger', lbl_act_carr: 'Aktiver Frachtführer',
+            lbl_ref: 'Transportreferenz (Flug/Datum)', lbl_plates: 'Fahrzeugkennzeichen', 
+            pkg_title: '📦 Verpackungsdatenbank verwalten', pkg_delete_lbl: 'Verpackung löschen', btn_delete_pkg: '🗑️ Löschen', pkg_add_lbl: 'Neue Verpackung hinzufügen', btn_save_pkg: '➕ Speichern',
+            db_title: '⚙️ UN-Datenbank verwalten', db_delete_lbl: 'UN-Nummer löschen', btn_delete: '🗑️ Löschen', db_add_lbl: 'Neue UN hinzufügen', db_chem_name: 'Stoffname', db_class: 'Klasse',
+            db_sub1: 'Unterklasse 1 (Opt)', db_sub2: 'Unterklasse 2 (Opt)', db_tunnel: 'Tunnelcode', db_cat: 'Beförderungskategorie', btn_save_un: '➕ UN speichern',
+            cargo_title: '2. Gefahrgutpositionen', th_awb: 'Referenz / AWB', th_pkgs: 'Kollianzahl', th_pack: 'Verpackung',
+            th_search: 'UN-Nr. oder Name', th_qty: 'Nettomenge', th_group: 'Gruppe', btn_add_row: '+ Zeile hinzufügen', adr_points: 'ADR Punkte: ',
+            lbl_force_adr: 'Fahrzeug transportiert weiteres ADR-Gut (>1000 Pkt. gesamt im LKW)', cons_title: '📦 Konsolidierungskonfiguration',
+            chk_title: '✅ ADR Vorbereitungs-Checkliste', chk_hdr_doc: 'Von der Dokumentation zu prüfen:',
+            chk_q1: '1) Beförderungspapier oder Beförderung nach ADR 1.1.4.2.1 mit DGD', chk_q2: '2) Gefahrgüter sind bereits auf der Beförderungseinheit und berechnet',
+            chk_q3: '3) Jedes Besatzungsmitglied verfügt über einen gültigen Führerschein und Lichtbildausweis', chk_q4: '4) Sendungen der Klasse 1: gültiger Befähigungsschein vorhanden',
+            chk_q5: '5) Bei Sendungen der Klasse 7: Beförderungsgenehmigung vorhanden', chk_q6: '6) Summe >1000 Punkte oder Klasse 7: Gültige ADR-Bescheinigung (ADR 8.2)',
+            chk_q7: '7) Schriftliche Weisungen', chk_hdr_wh: 'Vom Verlader zu prüfen:',
+            chk_q8: '8) Nur unbeschädigte Packstücke übergeben & Zusammenladeverbote beachtet', chk_q9: '9) Transport ≤ 1000 Punkte',
+            chk_q9a: 'a) 1 x Feuerlöscher min. 2 kg, plombiert und geprüft', chk_q10: '10) Transport > 1000 Punkte oder Klasse 7:',
+            chk_q10a: 'a) Kennzeichnung der Einheit vorne und hinten mit orangefarbenen Tafeln', chk_q10b: 'b) Kl. 1 und Kl. 7: Zusätzlich Placards an den Seiten und hinten',
+            chk_q10c: 'c) Feuerlöscher (Kapazität nach Tonnage), plombiert und geprüft', chk_q10d: 'd) Schutzausrüstung gemäß Schriftlichen Weisungen',
+            chk_q10e: 'e) Personenbeförderungsverbot beachtet', chk_q11: '11) Keine Mängel an Ladungssicherung oder Fahrzeug',
+            chk_q12: '12) Sichtprüfung für bereits geladene Gefahrgüter durchgeführt',
+            sign_title: '✍️ Ausstellung & Unterschriften', lbl_company: 'Unternehmen / Ausstellungsstation', lbl_place: 'Ausstellungsort', lbl_date: 'Ausstellungsdatum',
+            lbl_agent: 'Name des Agenten', lbl_loader: 'Name des Verladers', lbl_sig: 'Unterschrift Agent', btn_clear: 'Löschen', btn_generate: '🚀 PDF Erstellen'
+        }
+    };
+
+    function toggleLanguage() {
+        currentLang = currentLang === 'EN' ? 'DE' : 'EN';
+        document.getElementById('lang_label').innerText = currentLang;
+        document.querySelectorAll('[data-i18n]').forEach(el => {
+            const key = el.getAttribute('data-i18n');
+            if (dict[currentLang][key]) {
+                if(el.tagName === 'INPUT' && el.type === 'button') el.value = dict[currentLang][key];
+                else el.innerHTML = dict[currentLang][key];
+            }
+        });
+        showToast(currentLang === 'EN' ? 'Language switched to English' : 'Sprache auf Deutsch geändert', 'info');
+        updateConsolidations();
+    }
+
+    // --- 1. BASE DE DATOS (UN & PACKAGING) ---
+    const defaultUNs = [
+        { un: "1044", name: "FIRE EXTINGUISHERS", cls: "2.2", sub1: "", sub2: "", pg: "", tun: "E", cat: 3, unitMode: "solid" },
+        { un: "1089", name: "ACETALDEHYDE", cls: "3", sub1: "", sub2: "", pg: "I", tun: "D/E", cat: 1, unitMode: "liquid" },
+        { un: "1130", name: "CAMPHOR OIL", cls: "3", sub1: "", sub2: "", pg: "III", tun: "D/E", cat: 3, unitMode: "liquid" },
+        { un: "1133", name: "ADHESIVES", cls: "3", sub1: "", sub2: "", pg: "II", tun: "D/E", cat: 2, unitMode: "liquid" },
+        { un: "1133", name: "ADHESIVES", cls: "3", sub1: "", sub2: "", pg: "III", tun: "D/E", cat: 3, unitMode: "liquid" },
+        { un: "1139", name: "COATING SOLUTION", cls: "3", sub1: "", sub2: "", pg: "II", tun: "D/E", cat: 2, unitMode: "liquid" },
+        { un: "1170", name: "ETHANOL (ETHYL ALCOHOL)", cls: "3", sub1: "", sub2: "", pg: "II", tun: "D/E", cat: 2, unitMode: "liquid" },
+        { un: "1170", name: "ETHANOL SOLUTION (ETHYL ALCOHOL SOLUTION)", cls: "3", sub1: "", sub2: "", pg: "II", tun: "D/E", cat: 2, unitMode: "liquid" },
+        { un: "1173", name: "ETHYL ACETATE", cls: "3", sub1: "", sub2: "", pg: "II", tun: "D/E", cat: 2, unitMode: "liquid" },
+        { un: "1180", name: "ETHYL BUTYRATE", cls: "3", sub1: "", sub2: "", pg: "III", tun: "D/E", cat: 3, unitMode: "liquid" },
+        { un: "1197", name: "EXTRACTS, LIQUID", cls: "3", sub1: "", sub2: "", pg: "II", tun: "D/E", cat: 2, unitMode: "liquid" },
+        { un: "1197", name: "EXTRACTS, LIQUID", cls: "3", sub1: "", sub2: "", pg: "III", tun: "D/E", cat: 3, unitMode: "liquid" },
+        { un: "1219", name: "ISOPROPANOL (ISOPROPYL ALCOHOL)", cls: "3", sub1: "", sub2: "", pg: "II", tun: "D/E", cat: 2, unitMode: "liquid" },
+        { un: "1224", name: "KETONES, LIQUID, N.O.S.", cls: "3", sub1: "", sub2: "", pg: "III", tun: "D/E", cat: 3, unitMode: "liquid" },
+        { un: "1230", name: "METHANOL", cls: "3", sub1: "6.1", sub2: "", pg: "II", tun: "D/E", cat: 2, unitMode: "liquid" },
+        { un: "1231", name: "METHYL ACETATE", cls: "3", sub1: "", sub2: "", pg: "II", tun: "D/E", cat: 2, unitMode: "liquid" },
+        { un: "1235", name: "METHYLAMINE, AQUEOUS SOLUTION", cls: "3", sub1: "8", sub2: "", pg: "II", tun: "D/E", cat: 2, unitMode: "liquid" },
+        { un: "1247", name: "METHYL METHACRYLATE MONOMER, STABILIZED", cls: "3", sub1: "", sub2: "", pg: "II", tun: "D/E", cat: 2, unitMode: "liquid" },
+        { un: "1263", name: "PAINT", cls: "3", sub1: "", sub2: "", pg: "II", tun: "D/E", cat: 2, unitMode: "liquid" },
+        { un: "1263", name: "PAINT RELATED MATERIAL", cls: "3", sub1: "", sub2: "", pg: "II", tun: "D/E", cat: 2, unitMode: "liquid" },
+        { un: "1263", name: "PAINT", cls: "3", sub1: "", sub2: "", pg: "III", tun: "D/E", cat: 3, unitMode: "liquid" },
+        { un: "1263", name: "PAINT RELATED MATERIAL", cls: "3", sub1: "", sub2: "", pg: "III", tun: "D/E", cat: 3, unitMode: "liquid" },
+        { un: "1266", name: "PERFUMERY PRODUCTS", cls: "3", sub1: "", sub2: "", pg: "II", tun: "D/E", cat: 2, unitMode: "liquid" },
+        { un: "1266", name: "PERFUMERY PRODUCTS", cls: "3", sub1: "", sub2: "", pg: "III", tun: "D/E", cat: 3, unitMode: "liquid" },
+        { un: "1287", name: "RUBBER SOLUTION", cls: "3", sub1: "", sub2: "", pg: "II", tun: "D/E", cat: 2, unitMode: "liquid" },
+        { un: "1307", name: "XYLENES", cls: "3", sub1: "", sub2: "", pg: "III", tun: "D/E", cat: 3, unitMode: "liquid" },
+        { un: "1325", name: "FLAMMABLE SOLID, ORGANIC, N.O.S.", cls: "4.1", sub1: "", sub2: "", pg: "II", tun: "E", cat: 2, unitMode: "solid" },
+        { un: "1410", name: "LITHIUM ALUMINIUM HYDRIDE", cls: "4.1", sub1: "", sub2: "", pg: "I", tun: "E", cat: 1, unitMode: "solid" },
+        { un: "1415", name: "LITHIUM", cls: "4.3", sub1: "", sub2: "", pg: "I", tun: "B/E", cat: 1, unitMode: "solid" },
+        { un: "1428", name: "SODIUM", cls: "4.3", sub1: "", sub2: "", pg: "I", tun: "B/E", cat: 1, unitMode: "solid" },
+        { un: "1498", name: "SODIUM NITRATE", cls: "5.1", sub1: "", sub2: "", pg: "III", tun: "E", cat: 3, unitMode: "solid" },
+        { un: "1545", name: "METHYL ISOTHIOCYANATE", cls: "6.1", sub1: "3", sub2: "", pg: "II", tun: "D/E", cat: 2, unitMode: "liquid" },
+        { un: "1558", name: "ARSENIC", cls: "6.1", sub1: "", sub2: "", pg: "II", tun: "D/E", cat: 2, unitMode: "solid" },
+        { un: "1593", name: "DICHLOROMETHANE", cls: "6.1", sub1: "", sub2: "", pg: "III", tun: "E", cat: 3, unitMode: "liquid" },
+        { un: "1641", name: "MERCURIC OXIDE", cls: "6.1", sub1: "", sub2: "", pg: "II", tun: "D/E", cat: 2, unitMode: "solid" },
+        { un: "1648", name: "ACETONITRILE", cls: "3", sub1: "", sub2: "", pg: "II", tun: "D/E", cat: 2, unitMode: "liquid" },
+        { un: "1707", name: "THALLIUM COMPOUND, N.O.S.", cls: "6.1", sub1: "", sub2: "", pg: "II", tun: "D/E", cat: 2, unitMode: "solid" },
+        { un: "1759", name: "CORROSIVE SOLID, N.O.S.", cls: "8", sub1: "", sub2: "", pg: "II", tun: "E", cat: 2, unitMode: "solid" },
+        { un: "1760", name: "CORROSIVE LIQUID, N.O.S.", cls: "8", sub1: "", sub2: "", pg: "II", tun: "E", cat: 2, unitMode: "liquid" },
+        { un: "1760", name: "CORROSIVE LIQUID, N.O.S.", cls: "8", sub1: "", sub2: "", pg: "III", tun: "E", cat: 3, unitMode: "liquid" },
+        { un: "1789", name: "HYDROCHLORIC ACID", cls: "8", sub1: "", sub2: "", pg: "II", tun: "E", cat: 2, unitMode: "liquid" },
+        { un: "1789", name: "HYDROCHLORIC ACID", cls: "8", sub1: "", sub2: "", pg: "III", tun: "E", cat: 3, unitMode: "liquid" },
+        { un: "1812", name: "POTASSIUM FLUORIDE, SOLID", cls: "6.1", sub1: "", sub2: "", pg: "III", tun: "E", cat: 3, unitMode: "solid" },
+        { un: "1813", name: "POTASSIUM HYDROXIDE, SOLID", cls: "8", sub1: "", sub2: "", pg: "II", tun: "E", cat: 2, unitMode: "solid" },
+        { un: "1823", name: "SODIUM HYDROXIDE, SOLID", cls: "8", sub1: "", sub2: "", pg: "II", tun: "E", cat: 2, unitMode: "solid" },
+        { un: "1824", name: "SODIUM HYDROXIDE SOLUTION", cls: "8", sub1: "", sub2: "", pg: "II", tun: "E", cat: 2, unitMode: "liquid" },
+        { un: "1824", name: "SODIUM HYDROXIDE SOLUTION", cls: "8", sub1: "", sub2: "", pg: "III", tun: "E", cat: 3, unitMode: "liquid" },
+        { un: "1830", name: "SULPHURIC ACID", cls: "8", sub1: "", sub2: "", pg: "II", tun: "E", cat: 2, unitMode: "liquid" },
+        { un: "1866", name: "RESIN SOLUTION", cls: "3", sub1: "", sub2: "", pg: "II", tun: "D/E", cat: 2, unitMode: "liquid" },
+        { un: "1866", name: "RESIN SOLUTION", cls: "3", sub1: "", sub2: "", pg: "III", tun: "D/E", cat: 3, unitMode: "liquid" },
+        { un: "1950", name: "AEROSOLS", cls: "2.1", sub1: "", sub2: "", pg: "", tun: "D", cat: 2, unitMode: "both" }, 
+        { un: "1988", name: "ALDEHYDES, FLAMMABLE, TOXIC, N.O.S.", cls: "3", sub1: "6.1", sub2: "", pg: "III", tun: "D/E", cat: 3, unitMode: "liquid" },
+        { un: "1992", name: "FLAMMABLE LIQUID, TOXIC, N.O.S.", cls: "3", sub1: "6.1", sub2: "", pg: "II", tun: "D/E", cat: 2, unitMode: "liquid" },
+        { un: "1993", name: "FLAMMABLE LIQUID, N.O.S.", cls: "3", sub1: "", sub2: "", pg: "II", tun: "D/E", cat: 2, unitMode: "liquid" },
+        { un: "1993", name: "FLAMMABLE LIQUID, N.O.S.", cls: "3", sub1: "", sub2: "", pg: "III", tun: "D/E", cat: 3, unitMode: "liquid" },
+        { un: "2031", name: "NITRIC ACID", cls: "8", sub1: "5.1", sub2: "", pg: "II", tun: "E", cat: 2, unitMode: "liquid" },
+        { un: "2045", name: "ISOBUTYRALDEHYDE", cls: "3", sub1: "", sub2: "", pg: "II", tun: "D/E", cat: 2, unitMode: "liquid" },
+        { un: "2046", name: "CYMENES", cls: "3", sub1: "", sub2: "", pg: "III", tun: "D/E", cat: 3, unitMode: "liquid" },
+        { un: "2055", name: "STYRENE MONOMER, STABILIZED", cls: "3", sub1: "", sub2: "", pg: "III", tun: "D/E", cat: 3, unitMode: "liquid" },
+        { un: "2056", name: "TETRAHYDROFURAN", cls: "3", sub1: "", sub2: "", pg: "II", tun: "D/E", cat: 2, unitMode: "liquid" },
+        { un: "2206", name: "ISOCYANATES, TOXIC, N.O.S.", cls: "6.1", sub1: "", sub2: "", pg: "III", tun: "E", cat: 3, unitMode: "liquid" },
+        { un: "2243", name: "BUTYL ACETATES", cls: "3", sub1: "", sub2: "", pg: "III", tun: "D/E", cat: 3, unitMode: "liquid" },
+        { un: "2247", name: "n-DECANE", cls: "3", sub1: "", sub2: "", pg: "III", tun: "D/E", cat: 3, unitMode: "liquid" },
+        { un: "2282", name: "HEXANOLS", cls: "3", sub1: "", sub2: "", pg: "III", tun: "D/E", cat: 3, unitMode: "liquid" },
+        { un: "2430", name: "ALKYLPHENOLS, SOLID, N.O.S.", cls: "8", sub1: "", sub2: "", pg: "III", tun: "E", cat: 3, unitMode: "solid" },
+        { un: "2620", name: "AMYL BUTYRATES", cls: "3", sub1: "", sub2: "", pg: "III", tun: "D/E", cat: 3, unitMode: "liquid" },
+        { un: "2630", name: "SELENATES", cls: "6.1", sub1: "", sub2: "", pg: "I", tun: "C/E", cat: 1, unitMode: "solid" },
+        { un: "2630", name: "SELENITES", cls: "6.1", sub1: "", sub2: "", pg: "I", tun: "C/E", cat: 1, unitMode: "solid" },
+        { un: "2672", name: "AMMONIA SOLUTION", cls: "8", sub1: "", sub2: "", pg: "III", tun: "E", cat: 3, unitMode: "liquid" },
+        { un: "2725", name: "NICKEL NITRATE", cls: "5.1", sub1: "", sub2: "", pg: "III", tun: "E", cat: 3, unitMode: "solid" },
+        { un: "2735", name: "AMINES, LIQUID, CORROSIVE, N.O.S.", cls: "8", sub1: "", sub2: "", pg: "II", tun: "E", cat: 2, unitMode: "liquid" },
+        { un: "2785", name: "4-THIAPENTANAL", cls: "6.1", sub1: "", sub2: "", pg: "III", tun: "E", cat: 3, unitMode: "liquid" },
+        { un: "2789", name: "ACETIC ACID, GLACIAL", cls: "8", sub1: "3", sub2: "", pg: "II", tun: "D/E", cat: 2, unitMode: "liquid" },
+        { un: "2794", name: "BATTERIES, WET, FILLED WITH ACID", cls: "8", sub1: "", sub2: "", pg: "", tun: "E", cat: 3, unitMode: "solid" },
+        { un: "2829", name: "PROPIONIC ACID", cls: "8", sub1: "3", sub2: "", pg: "III", tun: "E", cat: 3, unitMode: "liquid" },
+        { un: "3066", name: "PAINT", cls: "8", sub1: "", sub2: "", pg: "II", tun: "E", cat: 2, unitMode: "liquid" },
+        { un: "3077", name: "ENVIRONMENTALLY HAZARDOUS SUBSTANCE, SOLID, N.O.S.", cls: "9", sub1: "", sub2: "", pg: "III", tun: "-", cat: 3, unitMode: "solid" },
+        { un: "3089", name: "METAL POWDER, FLAMMABLE, N.O.S.", cls: "4.1", sub1: "", sub2: "", pg: "II", tun: "E", cat: 2, unitMode: "solid" },
+        { un: "3090", name: "LITHIUM METAL BATTERIES", cls: "9", sub1: "", sub2: "", pg: "", tun: "E", cat: 2, unitMode: "solid" },
+        { un: "3091", name: "LITHIUM METAL BATTERIES CONTAINED IN EQUIPMENT", cls: "9", sub1: "", sub2: "", pg: "", tun: "E", cat: 2, unitMode: "solid" },
+        { un: "3092", name: "1-METHOXY-2-PROPANOL", cls: "3", sub1: "", sub2: "", pg: "III", tun: "D/E", cat: 3, unitMode: "liquid" },
+        { un: "3106", name: "ORGANIC PEROXIDE TYPE D, SOLID", cls: "5.2", sub1: "", sub2: "", pg: "", tun: "D", cat: 3, unitMode: "solid" },
+        { un: "3109", name: "ORGANIC PEROXIDE TYPE F, LIQUID", cls: "5.2", sub1: "8", sub2: "", pg: "", tun: "D", cat: 3, unitMode: "liquid" },
+        { un: "3164", name: "ARTICLES, PRESSURIZED, PNEUMATIC", cls: "2.2", sub1: "", sub2: "", pg: "", tun: "E", cat: 3, unitMode: "solid" },
+        { un: "3166", name: "VEHICLE, FLAMMABLE GAS POWERED", cls: "9", sub1: "", sub2: "", pg: "", tun: "", cat: 4, unitMode: "solid" },
+        { un: "3259", name: "AMINES, SOLID, CORROSIVE, N.O.S.", cls: "8", sub1: "", sub2: "", pg: "II", tun: "E", cat: 2, unitMode: "solid" },
+        { un: "3260", name: "CORROSIVE SOLID, ACIDIC, INORGANIC, N.O.S.", cls: "8", sub1: "", sub2: "", pg: "II", tun: "E", cat: 2, unitMode: "solid" },
+        { un: "3261", name: "CORROSIVE SOLID, ACIDIC, ORGANIC, N.O.S.", cls: "8", sub1: "", sub2: "", pg: "II", tun: "E", cat: 2, unitMode: "solid" },
+        { un: "3264", name: "CORROSIVE LIQUID, ACIDIC, INORGANIC, N.O.S.", cls: "8", sub1: "", sub2: "", pg: "II", tun: "E", cat: 2, unitMode: "liquid" },
+        { un: "3268", name: "SAFETY DEVICES", cls: "9", sub1: "", sub2: "", pg: "", tun: "E", cat: 4, unitMode: "solid" },
+        { un: "3272", name: "ESTERS, N.O.S.", cls: "3", sub1: "", sub2: "", pg: "II", tun: "D/E", cat: 2, unitMode: "liquid" },
+        { un: "3316", name: "FIRST AID KIT", cls: "9", sub1: "", sub2: "", pg: "II", tun: "E", cat: 2, unitMode: "solid" },
+        { un: "3334", name: "AVIATION REGULATED LIQUID, N.O.S.", cls: "9", sub1: "", sub2: "", pg: "III", tun: "", cat: 3, unitMode: "liquid" },
+        { un: "3363", name: "DANGEROUS GOODS IN MACHINERY", cls: "9", sub1: "", sub2: "", pg: "", tun: "", cat: 4, unitMode: "solid" },
+        { un: "3480", name: "LITHIUM ION BATTERIES", cls: "9", sub1: "", sub2: "", pg: "", tun: "E", cat: 2, unitMode: "solid" },
+        { un: "3481", name: "LITHIUM ION BATTERIES PACKED WITH EQUIPMENT", cls: "9", sub1: "", sub2: "", pg: "", tun: "E", cat: 2, unitMode: "solid" },
+        { un: "3528", name: "ENGINE, INTERNAL COMBUSTION", cls: "3", sub1: "", sub2: "", pg: "", tun: "D", cat: 4, unitMode: "solid" },
+        { un: "3556", name: "VEHICLE, LITHIUM ION BATTERY POWERED", cls: "9", sub1: "", sub2: "", pg: "", tun: "-", cat: 4, unitMode: "solid" },
+        { un: "3489", name: "TRICHLOROSILANE", cls: "4.3", sub1: "3", sub2: "8", pg: "I", tun: "B/E", cat: 1, unitMode: "liquid" },
+        // ── Gases (Class 2) — muy poco representada, ahora cubierta ──
+        { un: "1001", name: "ACETYLENE, DISSOLVED", cls: "2.1", sub1: "", sub2: "", pg: "", tun: "B/D", cat: 2, unitMode: "solid" },
+        { un: "1013", name: "CARBON DIOXIDE", cls: "2.2", sub1: "", sub2: "", pg: "", tun: "E", cat: 3, unitMode: "solid" },
+        { un: "1049", name: "HYDROGEN, COMPRESSED", cls: "2.1", sub1: "", sub2: "", pg: "", tun: "B/D", cat: 2, unitMode: "solid" },
+        { un: "1072", name: "OXYGEN, COMPRESSED", cls: "2.2", sub1: "5.1", sub2: "", pg: "", tun: "E", cat: 3, unitMode: "solid" },
+        { un: "1066", name: "NITROGEN, COMPRESSED", cls: "2.2", sub1: "", sub2: "", pg: "", tun: "E", cat: 3, unitMode: "solid" },
+        { un: "1965", name: "HYDROCARBON GAS MIXTURE, LIQUEFIED, N.O.S. (LPG)", cls: "2.1", sub1: "", sub2: "", pg: "", tun: "B/D", cat: 2, unitMode: "solid" },
+        { un: "1978", name: "PROPANE", cls: "2.1", sub1: "", sub2: "", pg: "", tun: "B/D", cat: 2, unitMode: "solid" },
+        { un: "1011", name: "BUTANE", cls: "2.1", sub1: "", sub2: "", pg: "", tun: "B/D", cat: 2, unitMode: "solid" },
+        { un: "2187", name: "CARBON DIOXIDE, REFRIGERATED LIQUID", cls: "2.2", sub1: "", sub2: "", pg: "", tun: "E", cat: 3, unitMode: "liquid" },
+        { un: "3161", name: "LIQUEFIED GAS, FLAMMABLE, N.O.S.", cls: "2.1", sub1: "", sub2: "", pg: "", tun: "B/D", cat: 2, unitMode: "solid" },
+        { un: "3163", name: "LIQUEFIED GAS, N.O.S.", cls: "2.2", sub1: "", sub2: "", pg: "", tun: "E", cat: 3, unitMode: "solid" },
+        { un: "3500", name: "CHEMICAL UNDER PRESSURE, N.O.S.", cls: "2.2", sub1: "", sub2: "", pg: "", tun: "E", cat: 3, unitMode: "solid" },
+        { un: "3501", name: "CHEMICAL UNDER PRESSURE, FLAMMABLE, N.O.S.", cls: "2.1", sub1: "", sub2: "", pg: "", tun: "B/D", cat: 2, unitMode: "solid" },
+
+        // ── Combustibles comunes (Class 3) — los más transportados ──
+        { un: "1202", name: "DIESEL FUEL / GAS OIL / HEATING OIL, LIGHT", cls: "3", sub1: "", sub2: "", pg: "III", tun: "D/E", cat: 3, unitMode: "liquid" },
+        { un: "1203", name: "PETROL / GASOLINE / MOTOR SPIRIT", cls: "3", sub1: "", sub2: "", pg: "II", tun: "D/E", cat: 2, unitMode: "liquid" },
+        { un: "1223", name: "KEROSENE", cls: "3", sub1: "", sub2: "", pg: "III", tun: "D/E", cat: 3, unitMode: "liquid" },
+        { un: "1268", name: "PETROLEUM DISTILLATES, N.O.S.", cls: "3", sub1: "", sub2: "", pg: "II", tun: "D/E", cat: 2, unitMode: "liquid" },
+        { un: "1863", name: "FUEL, AVIATION, TURBINE ENGINE", cls: "3", sub1: "", sub2: "", pg: "III", tun: "D/E", cat: 3, unitMode: "liquid" },
+        { un: "1090", name: "ACETONE", cls: "3", sub1: "", sub2: "", pg: "II", tun: "D/E", cat: 2, unitMode: "liquid" },
+        { un: "1208", name: "HEXANES", cls: "3", sub1: "", sub2: "", pg: "II", tun: "D/E", cat: 2, unitMode: "liquid" },
+        { un: "1210", name: "PRINTING INK, FLAMMABLE", cls: "3", sub1: "", sub2: "", pg: "II", tun: "D/E", cat: 2, unitMode: "liquid" },
+        { un: "1210", name: "PRINTING INK, FLAMMABLE", cls: "3", sub1: "", sub2: "", pg: "III", tun: "D/E", cat: 3, unitMode: "liquid" },
+        { un: "1294", name: "TOLUENE", cls: "3", sub1: "", sub2: "", pg: "II", tun: "D/E", cat: 2, unitMode: "liquid" },
+        { un: "1300", name: "TURPENTINE SUBSTITUTE / WHITE SPIRIT", cls: "3", sub1: "", sub2: "", pg: "III", tun: "D/E", cat: 3, unitMode: "liquid" },
+        { un: "1866", name: "RESIN SOLUTION", cls: "3", sub1: "", sub2: "", pg: "I", tun: "D/E", cat: 1, unitMode: "liquid" },
+        { un: "1993", name: "FLAMMABLE LIQUID, N.O.S.", cls: "3", sub1: "", sub2: "", pg: "I", tun: "D/E", cat: 1, unitMode: "liquid" },
+
+        // ── Corrosivos adicionales (Class 8) ──
+        { un: "1791", name: "HYPOCHLORITE SOLUTION", cls: "8", sub1: "", sub2: "", pg: "II", tun: "E", cat: 2, unitMode: "liquid" },
+        { un: "1791", name: "HYPOCHLORITE SOLUTION", cls: "8", sub1: "", sub2: "", pg: "III", tun: "E", cat: 3, unitMode: "liquid" },
+        { un: "1805", name: "PHOSPHORIC ACID SOLUTION", cls: "8", sub1: "", sub2: "", pg: "III", tun: "E", cat: 3, unitMode: "liquid" },
+        { un: "1814", name: "POTASSIUM HYDROXIDE SOLUTION", cls: "8", sub1: "", sub2: "", pg: "II", tun: "E", cat: 2, unitMode: "liquid" },
+        { un: "1824", name: "SODIUM HYDROXIDE SOLUTION", cls: "8", sub1: "", sub2: "", pg: "I", tun: "E", cat: 1, unitMode: "liquid" },
+        { un: "1830", name: "SULPHURIC ACID", cls: "8", sub1: "", sub2: "", pg: "I", tun: "E", cat: 1, unitMode: "liquid" },
+        { un: "2796", name: "SULPHURIC ACID (BATTERY FLUID, ACID)", cls: "8", sub1: "", sub2: "", pg: "II", tun: "E", cat: 2, unitMode: "liquid" },
+        { un: "2809", name: "MERCURY", cls: "8", sub1: "6.1", sub2: "", pg: "III", tun: "E", cat: 3, unitMode: "liquid" },
+        { un: "3265", name: "CORROSIVE LIQUID, ACIDIC, ORGANIC, N.O.S.", cls: "8", sub1: "", sub2: "", pg: "II", tun: "E", cat: 2, unitMode: "liquid" },
+        { un: "3266", name: "CORROSIVE LIQUID, BASIC, INORGANIC, N.O.S.", cls: "8", sub1: "", sub2: "", pg: "II", tun: "E", cat: 2, unitMode: "liquid" },
+        { un: "3267", name: "CORROSIVE LIQUID, BASIC, ORGANIC, N.O.S.", cls: "8", sub1: "", sub2: "", pg: "II", tun: "E", cat: 2, unitMode: "liquid" },
+
+        // ── Clase 9 — baterías y misceláneos modernos ──
+        { un: "3082", name: "ENVIRONMENTALLY HAZARDOUS SUBSTANCE, LIQUID, N.O.S.", cls: "9", sub1: "", sub2: "", pg: "III", tun: "-", cat: 3, unitMode: "liquid" },
+        { un: "3171", name: "BATTERY-POWERED VEHICLE / EQUIPMENT", cls: "9", sub1: "", sub2: "", pg: "", tun: "-", cat: 4, unitMode: "solid" },
+        { un: "3245", name: "GENETICALLY MODIFIED MICRO-ORGANISMS", cls: "9", sub1: "", sub2: "", pg: "", tun: "E", cat: 4, unitMode: "solid" },
+        { un: "3257", name: "ELEVATED TEMPERATURE LIQUID, N.O.S.", cls: "9", sub1: "", sub2: "", pg: "III", tun: "D", cat: 3, unitMode: "liquid" },
+        { un: "3373", name: "BIOLOGICAL SUBSTANCE, CATEGORY B", cls: "6.2", sub1: "", sub2: "", pg: "", tun: "-", cat: 4, unitMode: "both" },
+        { un: "3496", name: "BATTERIES, NICKEL-METAL HYDRIDE", cls: "9", sub1: "", sub2: "", pg: "", tun: "-", cat: 4, unitMode: "solid" },
+        { un: "3506", name: "MERCURY CONTAINED IN MANUFACTURED ARTICLES", cls: "8", sub1: "6.1", sub2: "", pg: "III", tun: "E", cat: 3, unitMode: "solid" },
+        { un: "3508", name: "CAPACITOR, ASYMMETRIC", cls: "9", sub1: "", sub2: "", pg: "", tun: "E", cat: 4, unitMode: "solid" },
+        { un: "3509", name: "PACKAGING, DISCARDED, EMPTY, UNCLEANED", cls: "9", sub1: "", sub2: "", pg: "", tun: "E", cat: 4, unitMode: "solid" },
+        { un: "3551", name: "SODIUM ION BATTERIES WITH ORGANIC ELECTROLYTE", cls: "9", sub1: "", sub2: "", pg: "", tun: "E", cat: 2, unitMode: "solid" },
+        { un: "3552", name: "SODIUM ION BATTERIES CONTAINED IN EQUIPMENT", cls: "9", sub1: "", sub2: "", pg: "", tun: "E", cat: 2, unitMode: "solid" },
+        { un: "3557", name: "VEHICLE, LITHIUM METAL BATTERY POWERED", cls: "9", sub1: "", sub2: "", pg: "", tun: "-", cat: 4, unitMode: "solid" },
+
+        // ── Clase 5.1 / 6.1 adicionales ──
+        { un: "1479", name: "OXIDIZING SOLID, N.O.S.", cls: "5.1", sub1: "", sub2: "", pg: "II", tun: "E", cat: 2, unitMode: "solid" },
+        { un: "2014", name: "HYDROGEN PEROXIDE, AQUEOUS SOLUTION (20-60%)", cls: "5.1", sub1: "8", sub2: "", pg: "II", tun: "E", cat: 2, unitMode: "liquid" },
+        { un: "2984", name: "HYDROGEN PEROXIDE, AQUEOUS SOLUTION (8-20%)", cls: "5.1", sub1: "", sub2: "", pg: "III", tun: "E", cat: 3, unitMode: "liquid" },
+        { un: "2810", name: "TOXIC LIQUID, ORGANIC, N.O.S.", cls: "6.1", sub1: "", sub2: "", pg: "II", tun: "D/E", cat: 2, unitMode: "liquid" },
+        { un: "2811", name: "TOXIC SOLID, ORGANIC, N.O.S.", cls: "6.1", sub1: "", sub2: "", pg: "II", tun: "D/E", cat: 2, unitMode: "solid" },
+        { un: "2922", name: "CORROSIVE LIQUID, TOXIC, N.O.S.", cls: "8", sub1: "6.1", sub2: "", pg: "II", tun: "E", cat: 2, unitMode: "liquid" },
+        { un: "3288", name: "TOXIC SOLID, INORGANIC, N.O.S.", cls: "6.1", sub1: "", sub2: "", pg: "II", tun: "D/E", cat: 2, unitMode: "solid" }
+    ];
+
+    const defaultPackaging = [
+        "Fibreboard Box", "Plastic Jerrican", "Steel Drum", "Wooden Crate", 
+        "Cylinder", "Composite Steel Drum", "Plywood Box", "Steel Box"
+    ];
+
+    // Función para crear las opciones de consolidación dinámicas (OP1-OP50 y AP1-AP50)
+    function getGroupOptionsHTML() {
+        let html = '<option value="none">- None -</option>';
+        for(let i = 1; i <= 50; i++) html += `<option value="OP${i}">Overpack ${i}</option>`;
+        for(let i = 1; i <= 50; i++) html += `<option value="AP${i}">All Packed ${i}</option>`;
+        return html;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // CONFIGURATION — Add your own default addresses here.
+    // These are loaded once on first launch and saved to LocalStorage.
+    // After that, all changes are made via the Address Book in the UI.
+    // Format for each entry: "Company Name\nStreet\nCity\nADR-Certificate-No"
+    // ─────────────────────────────────────────────────────────────────────────
+    const CONFIG = {
+        defaultSenders: [
+            // Example: "My Company GmbH\nStreet 1\n12345 City\nDE/RA/00000-00"
+        ],
+        defaultConsignees: [
+            // Example: "Partner Cargo GmbH\nAirport Road 5\n60549 Frankfurt\nDeutschland"
+        ],
+        defaultCarriers: [
+            // Example: "Transport Co.\nDE/H/00000-00"
+        ]
+    };
+    // ─────────────────────────────────────────────────────────────────────────
+
+    function initializeDefaultData() {
+        if (!localStorage.getItem('adr_initialized_v1')) {
+            let existingCustomUNs = [];
+            try { existingCustomUNs = JSON.parse(localStorage.getItem('adr_custom_uns')) || []; } catch(e) { existingCustomUNs = []; }
+            
+            existingCustomUNs = existingCustomUNs.map(item => {
+                if(item.sub !== undefined && item.sub1 === undefined) { item.sub1 = item.sub; item.sub2 = ""; delete item.sub; }
+                return item;
+            });
+
+            const combinedUNs = [...defaultUNs, ...existingCustomUNs];
+            const uniqueUNs = []; const seen = new Set();
+            combinedUNs.forEach(item => {
+                const key = `${item.un}-${item.pg}`;
+                if (!seen.has(key)) { seen.add(key); uniqueUNs.push(item); }
+            });
+            localStorage.setItem('adr_custom_uns', JSON.stringify(uniqueUNs));
+
+            // Packaging Database
+            let existingPkg = [];
+            try { existingPkg = JSON.parse(localStorage.getItem('adr_list_packaging')) || []; } catch(e) {}
+            localStorage.setItem('adr_list_packaging', JSON.stringify([...new Set([...defaultPackaging, ...existingPkg])]));
+
+            let existingSenders = []; let existingConsignees = []; let existingCarriers = [];
+            try {
+                existingSenders = JSON.parse(localStorage.getItem('adr_list_sender')) || [];
+                existingConsignees = JSON.parse(localStorage.getItem('adr_list_consignee')) || [];
+                existingCarriers = JSON.parse(localStorage.getItem('adr_list_carrier')) || [];
+            } catch(e) { existingSenders = []; existingConsignees = []; existingCarriers = []; }
+
+            localStorage.setItem('adr_list_sender', JSON.stringify([...new Set([...CONFIG.defaultSenders, ...existingSenders])]));
+            localStorage.setItem('adr_list_consignee', JSON.stringify([...new Set([...CONFIG.defaultConsignees, ...existingConsignees])]));
+            localStorage.setItem('adr_list_carrier', JSON.stringify([...new Set([...CONFIG.defaultCarriers, ...existingCarriers])]));
+
+            localStorage.setItem('adr_initialized_v1', 'true');
+        }
+    }
+
+    // ── QUICK CHECK ──────────────────────────────────────────────────────────
+
+    function addQuickRow() {
+        const tbody = document.getElementById('qc_tbody');
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td><input type="text" list="un_database" class="qc-un-input" placeholder="UN or name..."
+                   style="width:95%;" oninput="updateQuickCheck()"></td>
+            <td><input type="number" class="qc-qty" value="0" step="0.001" style="width:85%;" oninput="updateQuickCheck()"></td>
+            <td><select class="qc-unit" style="width:90%;" onchange="updateQuickCheck()">
+                <option value="-">-</option><option value="L">L</option><option value="kg">kg</option>
+            </select></td>
+            <td class="qc-pts" style="text-align:center; font-weight:700; color:var(--label-color);">—</td>
+            <td style="text-align:center;">
+                <button onclick="this.closest('tr').remove(); updateQuickCheck();"
+                    style="background:none; border:none; cursor:pointer; color:var(--danger-color); font-size:16px;">🗑️</button>
+            </td>`;
+        tbody.appendChild(tr);
+    }
+
+    function updateQuickCheck() {
+        let total = 0; let hasCategory0 = false;
+        document.querySelectorAll('#qc_tbody tr').forEach(row => {
+            const unVal = row.querySelector('.qc-un-input').value;
+            const qty   = parseFloat(row.querySelector('.qc-qty').value) || 0;
+            const cell  = row.querySelector('.qc-pts');
+            const found = findUNFromInput(unVal);
+            if (found && qty > 0) {
+                const cat = found.cat;
+                if (cat === 0) hasCategory0 = true;
+                const mult = cat === 1 ? 50 : (cat === 2 ? 3 : (cat === 3 ? 1 : 0));
+                const pts  = cat === 4 ? 0 : Math.ceil(qty * mult);
+                total += pts;
+                cell.innerText = cat === 4 ? '∞' : pts + ' pts';
+                cell.style.color = pts > 0 ? 'var(--accent-color)' : 'var(--label-color)';
+            } else { cell.innerText = '—'; cell.style.color = 'var(--label-color)'; }
+        });
+        const totalEl = document.getElementById('qc_total');
+        const statusEl = document.getElementById('qc_status');
+        totalEl.innerText = total;
+        if (hasCategory0) {
+            totalEl.style.color = 'var(--danger-color)';
+            statusEl.innerText  = '🔴 FULL ADR REQUIRED — Category 0 substance';
+            statusEl.style.color = 'var(--danger-color)';
+        } else if (total >= 1000) {
+            totalEl.style.color  = 'var(--danger-color)';
+            statusEl.innerText   = `🔴 FULL ADR REQUIRED — ${total} points (> 1000)`;
+            statusEl.style.color = 'var(--danger-color)';
+        } else if (total > 0) {
+            totalEl.style.color  = '#22c55e';
+            statusEl.innerText   = `✅ EXEMPT (1.1.3.6) — ${total} pts  ·  ${1000 - total} pts remaining`;
+            statusEl.style.color = '#22c55e';
+        } else {
+            totalEl.style.color  = 'var(--accent-color)';
+            statusEl.innerText   = 'Enter UN numbers and quantities above';
+            statusEl.style.color = 'var(--label-color)';
+        }
+    }
+
+    function clearQuickCheck() {
+        document.getElementById('qc_tbody').innerHTML = '';
+        document.getElementById('qc_total').innerText = '0';
+        document.getElementById('qc_total').style.color = 'var(--accent-color)';
+        document.getElementById('qc_status').innerText = 'Enter UN numbers and quantities above';
+        document.getElementById('qc_status').style.color = 'var(--label-color)';
+        addQuickRow(); addQuickRow(); addQuickRow();
+    }
+
+    function transferToMain() {
+        const qcRows = document.querySelectorAll('#qc_tbody tr');
+        const tbody  = document.getElementById('items_tbody');
+        while (tbody.rows.length > 1) tbody.deleteRow(1);
+        const first = tbody.rows[0];
+        first.querySelector('.row-un-input').value = '';
+        first.querySelector('.row-qty').value = 0;
+        first.querySelector('.row-unit').value = '-';
+        first.querySelector('.un-details').innerText = '';
+        let inserted = 0;
+        qcRows.forEach(row => {
+            const unVal = row.querySelector('.qc-un-input').value.trim();
+            const qty   = row.querySelector('.qc-qty').value;
+            const unit  = row.querySelector('.qc-unit').value;
+            if (!unVal) return;
+            let target = inserted === 0 ? first : (addRow(), tbody.rows[tbody.rows.length - 1]);
+            const inp = target.querySelector('.row-un-input');
+            inp.value = unVal;
+            target.querySelector('.row-qty').value = qty;
+            target.querySelector('.row-unit').value = unit;
+            updateRowDetails(inp);
+            inserted++;
+        });
+        updateTotals(); updateConsolidations();
+        showToast('✅ Transferred to main form');
+        document.getElementById('qc_panel').classList.add('collapsed');
+        document.getElementById('qc_arrow').innerText = '▶ Expand';
+        document.querySelector('[data-i18n="cargo_title"]').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    // Inicializar Quick Check con 3 filas al cargar
+    window.addEventListener('DOMContentLoaded', () => { addQuickRow(); addQuickRow(); addQuickRow(); });
+
+    // --- PACKAGING LOGIC ---
+    function getAllPackaging() { return JSON.parse(localStorage.getItem('adr_list_packaging') || "[]").sort(); }
+
+    function updatePackagingUI() {
+        // Actualiza el selector de borrado
+        const pkgs = getAllPackaging();
+        const selDel = document.getElementById('sel_delete_pkg');
+        selDel.innerHTML = '<option value="">-- Select packaging to delete --</option>';
+        pkgs.forEach(p => { let opt = document.createElement('option'); opt.value = p; opt.text = p; selDel.appendChild(opt); });
+        // Los selects del panel de consolidación (dynamic-pkg-select) se reconstruyen en updateConsolidations()
+        // Los inputs de autocomplete filtran bajo demanda — no necesitan pre-población
+    }
+
+    // ── Autocomplete de Packaging ──────────────────────────────────────────────
+
+    function highlightPkgMatch(text, query) {
+        if (!query) return text;
+        const idx = text.toLowerCase().indexOf(query.toLowerCase());
+        if (idx === -1) return text;
+        return text.substring(0, idx) +
+               '<strong>' + text.substring(idx, idx + query.length) + '</strong>' +
+               text.substring(idx + query.length);
+    }
+
+    function filterPkgDropdown(inputEl) {
+        const dropdown = inputEl.nextElementSibling;
+        if (!dropdown || !dropdown.classList.contains('pkg-dropdown')) return;
+        const val = inputEl.value.toLowerCase().trim();
+        const allPkgs = getAllPackaging();
+
+        let matches;
+        if (!val) {
+            matches = allPkgs;
+        } else {
+            matches = allPkgs.filter(p => p.toLowerCase().startsWith(val));
+            if (matches.length === 0) {
+                matches = allPkgs.filter(p => p.toLowerCase().includes(val));
+            }
+        }
+
+        dropdown.innerHTML = '';
+        if (matches.length === 0) {
+            dropdown.innerHTML = '<div class="pkg-empty-msg">No matching packaging types found.</div>';
+        } else {
+            matches.forEach(p => {
+                const item = document.createElement('div');
+                item.className = 'pkg-dropdown-item';
+                item.innerHTML = highlightPkgMatch(p, val);
+                item.dataset.value = p;
+                item.addEventListener('mousedown', function(e) {
+                    e.preventDefault();
+                    inputEl.value = this.dataset.value;
+                    dropdown.style.display = 'none';
+                    dropdown.innerHTML = '';
+                    inputEl.focus();
+                });
+                dropdown.appendChild(item);
+            });
+        }
+
+        // Posición fixed: anclada al input en el viewport
+        const rect = inputEl.getBoundingClientRect();
+        dropdown.style.top   = rect.bottom + 'px';
+        dropdown.style.left  = rect.left   + 'px';
+        dropdown.style.width = rect.width  + 'px';
+        dropdown.style.display = 'block';
+    }
+
+    function hidePkgDropdown(inputEl, delay) {
+        setTimeout(() => {
+            const dropdown = inputEl.nextElementSibling;
+            if (dropdown && dropdown.classList.contains('pkg-dropdown')) {
+                dropdown.style.display = 'none';
+            }
+        }, delay);
+    }
+
+    function handlePkgKeydown(event, inputEl) {
+        const dropdown = inputEl.nextElementSibling;
+        if (!dropdown || dropdown.style.display === 'none') {
+            if (event.key === 'ArrowDown' || event.key === 'Enter') {
+                filterPkgDropdown(inputEl); return;
+            }
+            return;
+        }
+        const items = Array.from(dropdown.querySelectorAll('.pkg-dropdown-item'));
+        let activeIdx = items.findIndex(i => i.classList.contains('active'));
+
+        if (event.key === 'ArrowDown') {
+            event.preventDefault();
+            if (activeIdx >= 0) items[activeIdx].classList.remove('active');
+            const next = activeIdx < items.length - 1 ? activeIdx + 1 : 0;
+            items[next] && items[next].classList.add('active');
+            items[next] && items[next].scrollIntoView({ block: 'nearest' });
+        } else if (event.key === 'ArrowUp') {
+            event.preventDefault();
+            if (activeIdx >= 0) items[activeIdx].classList.remove('active');
+            const prev = activeIdx > 0 ? activeIdx - 1 : items.length - 1;
+            items[prev] && items[prev].classList.add('active');
+            items[prev] && items[prev].scrollIntoView({ block: 'nearest' });
+        } else if (event.key === 'Enter' || event.key === 'Tab') {
+            const active = items[activeIdx];
+            const firstItem = items[0];
+            const target = active || (event.key === 'Enter' ? firstItem : null);
+            if (target && target.dataset.value) {
+                event.preventDefault();
+                inputEl.value = target.dataset.value;
+                dropdown.style.display = 'none';
+                dropdown.innerHTML = '';
+            }
+        } else if (event.key === 'Escape') {
+            dropdown.style.display = 'none';
+        }
+    }
+
+    function addPackaging() {
+        const input = document.getElementById('new_pkg_input');
+        const val = input.value.trim();
+        if(!val) return;
+        let pkgs = getAllPackaging();
+        if(!pkgs.includes(val)) {
+            pkgs.push(val);
+            localStorage.setItem('adr_list_packaging', JSON.stringify(pkgs));
+            updatePackagingUI();
+            input.value = "";
+            showToast("Packaging added successfully!");
+        } else { showToast("Packaging already exists.", "warning"); }
+    }
+
+    function deletePackaging() {
+        const sel = document.getElementById('sel_delete_pkg').value;
+        if(!sel) return;
+        if(confirm(`Delete "${sel}" from database?`)) {
+            let pkgs = getAllPackaging().filter(p => p !== sel);
+            localStorage.setItem('adr_list_packaging', JSON.stringify(pkgs));
+            updatePackagingUI();
+            showToast("Packaging deleted.");
+        }
+    }
+
+    // --- UN LOGIC ---
+    function getAllUNs() { return JSON.parse(localStorage.getItem('adr_custom_uns') || "[]").sort((a, b) => a.un.localeCompare(b.un)); }
+
+    function getFormattedSubText(u) {
+        if (u.sub1 && u.sub2) return ` (${u.sub1}, ${u.sub2})`;
+        if (u.sub1) return ` (${u.sub1})`;
+        if (u.sub) return ` (${u.sub})`; 
+        return "";
+    }
+
+    function initDatalist() {
+        const datalist = document.getElementById('un_database'); datalist.innerHTML = "";
+        getAllUNs().forEach(item => {
+            let opt = document.createElement('option');
+            let subText = getFormattedSubText(item); 
+            let pgText = (item.pg && item.pg !== "-") ? ` (PG ${item.pg})` : "";
+            opt.value = `${item.un} - ${item.name}${subText}${pgText}`; datalist.appendChild(opt);
+        });
+    }
+
+    function updateCustomUNSelector() {
+        const sel = document.getElementById('sel_delete_un'); sel.innerHTML = '<option value="">-- Select UN to delete --</option>';
+        getAllUNs().forEach(item => {
+            let opt = document.createElement('option');
+            let subText = getFormattedSubText(item); 
+            let pgText = (item.pg && item.pg !== "-") ? ` (PG ${item.pg})` : "";
+            opt.value = `${item.un}-${item.pg}`; opt.text = `UN ${item.un} - ${item.name}${subText}${pgText}`; sel.appendChild(opt);
+        });
+    }
+
+    // Estado del modo edición de UN
+    let editingUNKey = null; // null = añadir nuevo | "UN-PG" = editando existente
+
+    function editSelectedUN() {
+        const sel = document.getElementById('sel_delete_un');
+        if (!sel.value) { showToast("Select a UN from the list first", "warning"); return; }
+        const [editUn, editPg] = sel.value.split('-');
+        const entry = getAllUNs().find(u => u.un === editUn && u.pg === editPg);
+        if (!entry) { showToast("UN entry not found", "error"); return; }
+
+        // Cargar datos en el formulario
+        document.getElementById('db_un').value    = entry.un;
+        document.getElementById('db_name').value  = entry.name;
+        document.getElementById('db_class').value = entry.cls;
+        document.getElementById('db_sub1').value  = entry.sub1 || '';
+        document.getElementById('db_sub2').value  = entry.sub2 || '';
+        document.getElementById('db_pg').value    = entry.pg;
+        document.getElementById('db_tunnel').value = entry.tun || '';
+        document.getElementById('db_cat').value   = entry.cat;
+        // Cargar la unidad guardada
+        const storedUnit = entry.unitMode === 'liquid' ? 'L' : entry.unitMode === 'solid' ? 'kg' : '-';
+        document.getElementById('db_unit').value  = storedUnit;
+
+        // Activar modo edición
+        editingUNKey = sel.value;
+        document.getElementById('btn_save_un').innerText = '💾 Update UN';
+        document.getElementById('db_mode_label').innerText = `✏️ Editing UN ${editUn} (PG ${editPg}) — modify fields and click Update`;
+        document.getElementById('db_mode_label').style.color = 'var(--warning-color)';
+        document.getElementById('btn_cancel_edit').style.display = 'inline-block';
+        document.getElementById('db_un').classList.add('un-edit-mode');
+        showToast(`UN ${editUn} loaded for editing`, 'warning');
+
+        // Scroll al formulario
+        document.getElementById('db_un').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    function cancelEditUN() {
+        editingUNKey = null;
+        document.getElementById('btn_save_un').innerText = '➕ Save UN';
+        document.getElementById('db_mode_label').innerText = 'Add New UN to Memory';
+        document.getElementById('db_mode_label').style.color = 'var(--warning-color)';
+        document.getElementById('btn_cancel_edit').style.display = 'none';
+        document.getElementById('db_un').classList.remove('un-edit-mode');
+        ['db_un','db_name','db_class','db_sub1','db_sub2','db_tunnel','db_cat'].forEach(id => document.getElementById(id).value = '');
+        document.getElementById('db_pg').value = 'I';
+        document.getElementById('db_unit').value = '-';
+    }
+
+    function saveCustomUN() {
+        const un   = document.getElementById('db_un').value.trim();
+        const name = document.getElementById('db_name').value.toUpperCase().trim();
+        if (!un || !name) { showToast("Missing UN Number or Name", "error"); return; }
+
+        const cls  = document.getElementById('db_class').value.trim();
+        const sub1 = document.getElementById('db_sub1').value.trim();
+        const sub2 = document.getElementById('db_sub2').value.trim();
+        const pg   = document.getElementById('db_pg').value;
+        const tun  = document.getElementById('db_tunnel').value.toUpperCase().trim();
+        const cat  = parseInt(document.getElementById('db_cat').value) || 3;
+
+        // Unidad guardada explícitamente por el usuario
+        const dbUnit = document.getElementById('db_unit').value;
+        const unitMode = dbUnit === 'L' ? 'liquid' : dbUnit === 'kg' ? 'solid' : 'both';
+
+        let allUNs = getAllUNs();
+        const isEditing = editingUNKey !== null;
+
+        if (isEditing) {
+            const [oldUn, oldPg] = editingUNKey.split('-');
+            allUNs = allUNs.filter(item => !(item.un === oldUn && item.pg === oldPg));
+            showToast(`UN ${un} (PG ${pg}) updated successfully!`);
+            cancelEditUN();
+        } else {
+            allUNs = allUNs.filter(item => !(item.un === un && item.pg === pg));
+            showToast(`UN ${un} (PG ${pg}) saved!`);
+            ['db_un','db_name','db_sub1','db_sub2','db_tunnel'].forEach(id => document.getElementById(id).value = '');
+            document.getElementById('db_unit').value = '-';
+        }
+
+        allUNs.push({ un, name, cls, sub1, sub2, pg, tun, cat, unitMode });
+        localStorage.setItem('adr_custom_uns', JSON.stringify(allUNs));
+        initDatalist(); updateCustomUNSelector();
+    }
+
+    function deleteCustomUN() {
+        const sel = document.getElementById('sel_delete_un');
+        if (!sel.value) { showToast("Select a UN first", "warning"); return; }
+        const [delUn, delPg] = sel.value.split('-');
+        if (confirm(`Delete UN ${delUn} (PG ${delPg})?`)) {
+            let allUNs = getAllUNs().filter(item => !(item.un === delUn && item.pg === delPg));
+            localStorage.setItem('adr_custom_uns', JSON.stringify(allUNs));
+            initDatalist(); updateCustomUNSelector(); showToast("UN Deleted", "info");
+            if (editingUNKey === sel.value) cancelEditUN();
+        }
+    }
+
+    function findUNFromInput(inputVal) {
+        if (!inputVal || !inputVal.trim()) return null;
+        const val = inputVal.trim();
+
+        // 1. Coincidencia exacta — seleccionado del datalist
+        let found = getAllUNs().find(u => {
+            let subText = getFormattedSubText(u); let pgText = (u.pg && u.pg !== "-") ? ` (PG ${u.pg})` : "";
+            return `${u.un} - ${u.name}${subText}${pgText}` === val;
+        });
+        if (found) return found;
+
+        // 2. Empieza por 4 dígitos — solo el número
+        const numMatch = val.match(/^\d{4}/);
+        if (numMatch) { found = getAllUNs().find(u => u.un === numMatch[0]); if (found) return found; }
+
+        // 3. Búsqueda por nombre parcial — si el usuario escribió "petrol", "acetone", etc.
+        const lower = val.toLowerCase();
+        found = getAllUNs().find(u => u.name.toLowerCase().includes(lower));
+        return found || null;
+    }
+
+    // --- 2. LÓGICA DE PANELES Y DIRECCIONES ---
+    function togglePanel(panelId, arrowId) {
+        const panel = document.getElementById(panelId); const arrow = document.getElementById(arrowId);
+        if (panel.classList.contains('collapsed')) { panel.classList.remove('collapsed'); arrow.innerText = "▼ Collapse"; } 
+        else { panel.classList.add('collapsed'); arrow.innerText = "▶ Expand"; }
+    }
+
+    function loadAddressBooks() {
+        ['sender', 'consignee', 'carrier'].forEach(cat => {
+            let list = JSON.parse(localStorage.getItem(`adr_list_${cat}`) || "[]");
+            const selectEl = document.getElementById(`sel_${cat}`); selectEl.innerHTML = "<option value=''>-- Select from saved --</option>";
+            list.forEach(item => { let opt = document.createElement('option'); opt.value = item; opt.text = item.split('\n')[0]; selectEl.appendChild(opt); });
+            document.getElementById(`active_${cat}`).value = localStorage.getItem(`adr_active_${cat}`) || "";
+        });
+        document.getElementById('vehicle_plates').value = localStorage.getItem('adr_vehicle_plates') || "";
+        document.getElementById('office_agent').value = localStorage.getItem('adr_office_agent') || "";
+        document.getElementById('loader_agent').value = localStorage.getItem('adr_loader_agent') || "";
+        document.getElementById('office_place').value = localStorage.getItem('adr_office_place') || "";
+        document.getElementById('office_company').value = localStorage.getItem('adr_office_company') || "";
+        const today = new Date(); document.getElementById('office_date').value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    }
+
+    function loadAddress(cat) { const val = document.getElementById(`sel_${cat}`).value; if(val) { document.getElementById(`active_${cat}`).value = val; saveSimpleMemory(); showToast("Address loaded", "info"); } }
+    
+    function saveNewAddress(cat) {
+        const newVal = document.getElementById(`active_${cat}`).value.trim(); if(!newVal) return;
+        let list = JSON.parse(localStorage.getItem(`adr_list_${cat}`) || "[]");
+        if(!list.includes(newVal)) { list.push(newVal); localStorage.setItem(`adr_list_${cat}`, JSON.stringify(list)); showToast(`Saved to ${cat} book!`); loadAddressBooks(); } 
+        else { showToast("Already saved.", "warning"); }
+    }
+
+    function deleteAddress(cat) {
+        const selectEl = document.getElementById(`sel_${cat}`); if (!selectEl.value) { showToast(`Select a saved ${cat} first.`, "warning"); return; }
+        if (confirm(`Delete this address?\n\n"${selectEl.value.split('\n')[0]}..."`)) {
+            let list = JSON.parse(localStorage.getItem(`adr_list_${cat}`) || "[]"); localStorage.setItem(`adr_list_${cat}`, JSON.stringify(list.filter(item => item !== selectEl.value)));
+            loadAddressBooks(); showToast("Address deleted", "info");
+        }
+    }
+
+    function saveSimpleMemory() {
+        ['sender', 'consignee', 'carrier'].forEach(cat => localStorage.setItem(`adr_active_${cat}`, document.getElementById(`active_${cat}`).value));
+        localStorage.setItem('adr_vehicle_plates', document.getElementById('vehicle_plates').value);
+        localStorage.setItem('adr_office_agent', document.getElementById('office_agent').value);
+        localStorage.setItem('adr_loader_agent', document.getElementById('loader_agent').value);
+        localStorage.setItem('adr_office_place', document.getElementById('office_place').value);
+        localStorage.setItem('adr_office_company', document.getElementById('office_company').value);
+    }
+
+    // --- 3. TABLA Y CONSOLIDACIONES ---
+    document.addEventListener('input', function(e) {
+        if (e.target.classList.contains('row-awb')) { /* no formatting — free text reference */ }
+    });
+
+    function addRow() {
+        const tbody = document.getElementById('items_tbody');
+        const newRow = tbody.rows[0].cloneNode(true);
+        newRow.classList.remove('ambiguous-row');
+
+        // Limpiar campos básicos
+        newRow.querySelector('.row-awb').value = "";
+        newRow.querySelector('.row-qty').value = 0;
+        newRow.querySelector('.row-un-input').value = "";
+        newRow.querySelector('.un-details').innerText = "";
+
+        // Unit: volver a '-' (vacío intencional)
+        const unitSel = newRow.querySelector('.row-unit');
+        unitSel.value = "-";
+        unitSel.removeAttribute('data-default-unit');
+
+        // Packaging autocomplete: limpiar input y cerrar dropdown
+        const pkgInput = newRow.querySelector('.row-packtype');
+        if (pkgInput) pkgInput.value = '';
+        const pkgDropdown = newRow.querySelector('.pkg-dropdown');
+        if (pkgDropdown) { pkgDropdown.style.display = 'none'; pkgDropdown.innerHTML = ''; }
+
+        // Grupo
+        newRow.querySelector('.row-group').innerHTML = getGroupOptionsHTML();
+        newRow.querySelector('.row-group').value = "none";
+
+        tbody.appendChild(newRow);
+        updateConsolidations();
+    }
+
+    function deleteRow(btnEl) {
+        const tbody = document.getElementById('items_tbody');
+        if (tbody.rows.length <= 1) { showToast("Cannot delete the last remaining row.", "warning"); return; }
+        btnEl.closest('tr').remove();
+        updateTotals();
+        updateConsolidations();
+    }
+
+    function checkUnitStatus(selectEl) {
+        const row = selectEl.closest('tr');
+        // La fila amarilla solo aparece si no hay ningún UN seleccionado todavía
+        const hasUN = row.querySelector('.row-un-input').value.trim() !== '';
+        if (!hasUN) { row.classList.add('ambiguous-row'); }
+        else { row.classList.remove('ambiguous-row'); }
+    }
+
+    function handleUnitChange(selectEl) {
+        checkUnitStatus(selectEl);
+        const def = selectEl.dataset.defaultUnit;
+        if (selectEl.value && def && def !== 'both') {
+            if ((def === 'liquid' && selectEl.value === 'kg') || (def === 'solid' && selectEl.value === 'L')) {
+                showToast("Manual unit override applied. Please verify accuracy.", "warning");
+            }
+        }
+        updateTotals();
+    }
+
+    function updateRowDetails(inputEl) {
+        const row = inputEl.closest('tr'); const detailsDiv = row.querySelector('.un-details'); 
+        const found = findUNFromInput(inputEl.value);
+        if (found) {
+            let subDisplay = getFormattedSubText(found); let pgDisplay = (found.pg && found.pg !== "-") ? ` | PG: ${found.pg}` : "";
+            detailsDiv.innerText = `Class: ${found.cls}${subDisplay}${pgDisplay} | Tunnel: (${found.tun})`;
+            row.classList.remove('ambiguous-row'); 
+
+            const unitSelect = row.querySelector('.row-unit');
+            unitSelect.dataset.defaultUnit = found.unitMode;
+            if (found.unitMode === 'liquid') { unitSelect.value = 'L'; }
+            else if (found.unitMode === 'solid') { unitSelect.value = 'kg'; }
+            else { unitSelect.value = '-'; }  // 'both' → - (ambos posibles)
+            checkUnitStatus(unitSelect);
+        } else { detailsDiv.innerText = inputEl.value ? "UN not found in database" : ""; }
+        updateTotals();
+    }
+
+    // --- LÓGICA DE CONSOLIDACIONES ACTUALIZADA ---
+    let consolidationState = {}; 
+
+    // Guarda el estado del panel en tiempo real
+    function updateConsolidationState() {
+        document.querySelectorAll('.cons-row').forEach(row => {
+            const grp = row.dataset.group;
+            if (!consolidationState[grp]) consolidationState[grp] = {};
+            consolidationState[grp].qty = row.querySelector('.cons-qty').value;
+            const typeSel = row.querySelector('.cons-type');
+            if (typeSel) consolidationState[grp].type = typeSel.value;
+        });
+    }
+
+    function updateConsolidations() {
+        // Antes de redibujar, guardamos los valores que el usuario haya escrito
+        updateConsolidationState();
+
+        const panel = document.getElementById('consolidation_panel');
+        const container = document.getElementById('cons_container');
+        let groups = new Set();
+        document.querySelectorAll('.row-group').forEach(sel => { if (sel.value !== 'none') groups.add(sel.value); });
+        
+        if (groups.size === 0) { panel.style.display = 'none'; container.innerHTML = ''; updateTotals(); return; }
+        panel.style.display = 'block';
+
+        container.innerHTML = '';
+        const allPkgs = getAllPackaging();
+        const lblQty = currentLang === 'EN' ? "Number of Units:" : "Anzahl der Einheiten:";
+        const lblType = currentLang === 'EN' ? "Outer Packaging:" : "Außenverpackung:";
+
+        Array.from(groups).sort().forEach(grp => {
+            const isAP = grp.startsWith('AP');
+            const state = consolidationState[grp] || { qty: 1, type: allPkgs[0] };
+            let title = isAP ? `All Packed in One (${grp})` : `Overpack (${grp})`;
+            
+            // Hemos quitado max="3" y añadido oninput para guardar y recalcular al instante
+            let html = `<div class="cons-row" data-group="${grp}">
+                            <div class="cons-badge">${title}</div>
+                            <label style="margin-left: 10px;">${lblQty}</label>
+                            <input type="number" class="cons-qty" value="${state.qty}" min="1" style="width: 70px; padding: 5px;" oninput="updateConsolidationState(); updateTotals();">`;
+            
+            if (isAP) {
+                let options = allPkgs.map(p => `<option value="${p}" ${p === state.type ? 'selected' : ''}>${p}</option>`).join('');
+                html += `<label style="margin-left: 15px;">${lblType}</label>
+                         <select class="cons-type dynamic-pkg-select" style="width: 200px; padding: 5px;" onchange="updateConsolidationState();">${options}</select>`;
+            }
+            html += `</div>`;
+            container.insertAdjacentHTML('beforeend', html);
+        });
+
+        // Al crear/borrar grupos, los totales pueden variar
+        updateTotals();
+    }
+
+    const tunnelRanking = { "-": 0, "A": 1, "B": 2, "B/C": 3, "B/D": 4, "B/E": 5, "C": 6, "C/D": 7, "C/E": 8, "D": 9, "D/E": 10, "E": 11 };
+
+    // --- CÁLCULO DE PUNTOS CORREGIDO Y DESGLOSE ---
+    function updateTotals() {
+        let totalPoints = 0; let globalTunnel = "-";
+        let hasCategory0 = false; 
+        let catPts = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0 }; // NUEVO: rastreo de puntos por categoría
+
+        document.querySelectorAll('#items_tbody tr').forEach(row => {
+            const inputVal = row.querySelector('.row-un-input').value;
+            const unitQty = parseFloat(row.querySelector('.row-qty').value) || 0;
+            const pkgs = parseInt(row.querySelector('.row-pkgs').value) || 1;
+            
+            // Buscamos si esta fila pertenece a un grupo y cuántas unidades tiene ese grupo
+            let consQty = 1;
+            const groupVal = row.querySelector('.row-group').value;
+            if (groupVal !== 'none' && consolidationState[groupVal]) {
+                consQty = parseInt(consolidationState[groupVal].qty) || 1;
+            }
+
+            // Nueva Fórmula: (Qty_Linea * Pkgs_Linea) * Cantidad_de_Overpacks_o_AP
+            const totalQty = unitQty * pkgs * consQty;
+            const foundUN = findUNFromInput(inputVal);
+            
+            if (foundUN && totalQty > 0) {
+                let cat = foundUN.cat;
+                if (cat === 0) hasCategory0 = true;
+                
+                let multiplier = cat === 1 ? 50 : (cat === 2 ? 3 : (cat === 3 ? 1 : 0));
+                let pts = Math.ceil(totalQty * multiplier);
+                
+                catPts[cat] += pts;
+                if (cat === 0) catPts[0] += totalQty; // Para Cat 0 guardamos la cantidad bruta para encender la alerta
+
+                totalPoints += pts;
+                if (tunnelRanking[foundUN.tun] > tunnelRanking[globalTunnel]) { globalTunnel = foundUN.tun; }
+            }
+        });
+
+        // Actualizamos UI Principal
+        document.getElementById('points_text').innerText = totalPoints;
+        const badge = document.getElementById('status_badge');
+        const forceFullADR = document.getElementById('force_full_adr') ? document.getElementById('force_full_adr').checked : false;
+
+        if (totalPoints > 1000 || forceFullADR || hasCategory0) { 
+            let alertTxt = hasCategory0 ? "FULL ADR (CAT 0 DETECTED)" : (forceFullADR && totalPoints <= 1000 ? "FULL ADR (FORCED)" : "FULL ADR");
+            badge.innerText = alertTxt; 
+            badge.className = "points-badge badge-danger"; 
+        } 
+        else { 
+            badge.innerText = "EXEMPT (1.1.3.6)"; 
+            badge.className = "points-badge badge-safe"; 
+        }
+
+        // Actualizamos el Breakdown Box
+        document.getElementById('pt_cat0').innerText = catPts[0] > 0 ? "⚠️" : "0";
+        document.getElementById('pt_cat0').style.color = catPts[0] > 0 ? "var(--danger-color)" : "inherit";
+        document.getElementById('pt_cat1').innerText = catPts[1];
+        document.getElementById('pt_cat2').innerText = catPts[2];
+        document.getElementById('pt_cat3').innerText = catPts[3];
+        document.getElementById('pt_cat4').innerText = catPts[4];
+        
+        return { totalPoints, globalTunnel, hasCategory0 }; 
+    }
+
+    function resetForm() {
+        if(confirm("Clear items?")) {
+            const tbody = document.getElementById('items_tbody'); while(tbody.rows.length > 1) { tbody.deleteRow(1); }
+            tbody.rows[0].classList.remove('ambiguous-row');
+            tbody.rows[0].querySelector('.row-awb').value = ""; tbody.rows[0].querySelector('.row-qty').value = "0"; 
+            tbody.rows[0].querySelector('.row-un-input').value = ""; tbody.rows[0].querySelector('.row-unit').value = "";
+            tbody.rows[0].querySelector('.row-group').value = "none";
+            tbody.rows[0].querySelector('.un-details').innerText = "";
+            document.getElementById('ref_no').value = ""; clearSignature(); updateTotals(); updateConsolidations();
+            showToast("Form cleared", "info");
+        }
+    }
+
+
+    // --- 5. FIRMA TÁCTIL ---
+    const canvas = document.getElementById('sig_canvas'); const ctx = canvas.getContext('2d'); let isDrawing = false;
+    function resizeCanvas() { 
+        canvas.width = canvas.parentElement.clientWidth; canvas.height = canvas.parentElement.clientHeight; 
+        const computedColor = getComputedStyle(document.documentElement).getPropertyValue('--accent-color').trim();
+        ctx.strokeStyle = computedColor || "#3b82f6"; ctx.lineWidth = 3; ctx.lineJoin = "round"; ctx.lineCap = "round"; 
+    }
+    window.addEventListener('load', resizeCanvas); window.addEventListener('resize', resizeCanvas); 
+    canvas.addEventListener('mousedown', (e) => { isDrawing = true; ctx.beginPath(); ctx.moveTo(e.offsetX, e.offsetY); });
+    canvas.addEventListener('mousemove', (e) => { if (isDrawing) { ctx.lineTo(e.offsetX, e.offsetY); ctx.stroke(); } });
+    canvas.addEventListener('mouseup', () => isDrawing = false); canvas.addEventListener('mouseleave', () => isDrawing = false);
+    canvas.addEventListener('touchstart', (e) => { isDrawing = true; ctx.beginPath(); const rect = canvas.getBoundingClientRect(); ctx.moveTo(e.touches[0].clientX - rect.left, e.touches[0].clientY - rect.top); e.preventDefault(); });
+    canvas.addEventListener('touchmove', (e) => { if (!isDrawing) return; const rect = canvas.getBoundingClientRect(); ctx.lineTo(e.touches[0].clientX - rect.left, e.touches[0].clientY - rect.top); ctx.stroke(); e.preventDefault(); });
+    canvas.addEventListener('touchend', (e) => { isDrawing = false; e.preventDefault(); });
+    function clearSignature() { ctx.clearRect(0, 0, canvas.width, canvas.height); }
+
+    // --- 6. MOTOR PDF ---
+    async function generateADR(btnEl) {
+        const fileInput = document.getElementById('pdf_upload');
+        const chkFileInput = document.getElementById('chk_upload');
+        
+        if (!fileInput.files.length) { showToast("Please upload your ADR PDF template first", "error"); return; }
+        
+        const emptyUnits = document.querySelectorAll('.row-unit');
+        for(let u of emptyUnits) {
+            const qty = parseFloat(u.closest('tr').querySelector('.row-qty').value) || 0;
+            // '-' es válido (ambos posibles o desconocido). Solo bloqueamos si está vacío.
+            if (qty > 0 && !u.value) {
+                showToast("Please select a unit (L / kg / -) for all cargo rows", "error");
+                return;
+            }
+        }
+
+        btnEl.innerText = "Processing..."; btnEl.disabled = true;
+        saveSimpleMemory();
+
+        updateConsolidationState();
+
+        try {
+            const file = fileInput.files[0]; const fileBuffer = await file.arrayBuffer();
+            const outputPdfDoc = await PDFLib.PDFDocument.create();
+            const rows = document.querySelectorAll('#items_tbody tr');
+            
+            const calcData = updateTotals();
+            let currentPoints = calcData.totalPoints;
+            const forceFullADR = document.getElementById('force_full_adr').checked;
+            const isFullADR = currentPoints > 1000 || forceFullADR || calcData.hasCategory0;
+            
+            let finalTunnel = "N/A (Exempt)";
+            if (isFullADR) { finalTunnel = calcData.globalTunnel === "-" ? "E" : `(${calcData.globalTunnel})`; }
+            
+            let catTotals = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0 };
+            
+            let groupedRows = { none: [] };
+            rows.forEach(r => {
+                let grp = r.querySelector('.row-group').value;
+                if(!groupedRows[grp]) groupedRows[grp] = [];
+                groupedRows[grp].push(r);
+            });
+
+            let printLines = [];
+
+            // APLICACIÓN DEL MULTIPLICADOR PARA EL TEXTO DEL PDF
+            const buildTextLine = (r) => {
+                const inputVal = r.querySelector('.row-un-input').value;
+                const unitQty = parseFloat(r.querySelector('.row-qty').value) || 0;
+                const pkgs = parseInt(r.querySelector('.row-pkgs').value) || 1;
+                
+                let consQty = 1;
+                const grp = r.querySelector('.row-group').value;
+                if (grp !== 'none' && consolidationState[grp]) {
+                    consQty = parseInt(consolidationState[grp].qty) || 1;
+                }
+
+                const totalQty = unitQty * pkgs * consQty;
+                const foundUN = findUNFromInput(inputVal);
+                if (!foundUN || totalQty <= 0) return [];
+                
+                catTotals[foundUN.cat] += totalQty; 
+                let subText = getFormattedSubText(foundUN);
+                let pgText = (foundUN.pg && foundUN.pg !== "-") ? `, PG ${foundUN.pg}` : "";
+                let tunText = foundUN.tun ? `, (${foundUN.tun})` : "";
+                
+                // Muestra visualmente la suma de los paquetes físicos totales
+                let totalPackages = pkgs * consQty;
+                let fullDesc = `AWB ${r.querySelector('.row-awb').value||"000-00000000"} | ${totalPackages} x ${r.querySelector('.row-packtype').value} | UN ${foundUN.un} ${foundUN.name}, Class ${foundUN.cls}${subText}${pgText}${tunText}`;
+                let qtyStr = `| Total Qty: ${totalQty.toFixed(3)} ${r.querySelector('.row-unit').value}`;
+                let fullLine = fullDesc + "  " + qtyStr;
+                
+                const maxLineLen = 115;
+                if (fullLine.length <= maxLineLen) return [fullLine];
+                
+                let words = fullDesc.split(' '); let currentLine = ""; let localLines = [];
+                for(let w of words) {
+                    if((currentLine.length + w.length) > (maxLineLen - 15)) { 
+                        localLines.push(currentLine.trim()); currentLine = w + " "; 
+                    } else { currentLine += w + " "; }
+                }
+                if(currentLine.trim()) localLines.push(currentLine.trim());
+                let result = [];
+                localLines.forEach((lText, idx) => { result.push(idx === localLines.length - 1 ? lText + "  " + qtyStr : lText); });
+                return result;
+            };
+
+            groupedRows.none.forEach(r => printLines.push(...buildTextLine(r)));
+
+            for (let grp in groupedRows) {
+                if(grp === 'none') continue;
+                let isAP = grp.startsWith('AP');
+                let cfg = consolidationState[grp] || { qty: 1, type: "PACKAGE" };
+                
+                printLines.push(isAP ? `* ALL PACKED IN ONE *` : `* OVERPACK USED *`);
+                groupedRows[grp].forEach(r => printLines.push(...buildTextLine(r)));
+                
+                if (isAP) {
+                    let typeText = cfg.type.toUpperCase();
+                    if(cfg.qty > 1) typeText += "S";
+                    printLines.push(`* OUTER PACKAGING: ${cfg.qty} ${typeText} *`);
+                } else {
+                    let text = cfg.qty > 1 ? `${cfg.qty} Overpacks` : `1 Overpack`;
+                    printLines.push(`* END OF OVERPACK (Total: ${text}) *`);
+                }
+            }
+
+            const itemsPerPage = 17; 
+            const totalPagesNeeded = Math.ceil(printLines.length / itemsPerPage) || 1;
+            const rawDate = document.getElementById('office_date').value;
+            const fDate = rawDate ? `${rawDate.split('-')[2]}.${rawDate.split('-')[1]}.${rawDate.split('-')[0]}` : "";
+            const buffer = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+            const hasSigned = buffer.some((val, i) => i % 4 === 3 && val > 0);
+
+            for (let p = 0; p < totalPagesNeeded; p++) {
+                const tempDoc = await PDFLib.PDFDocument.load(fileBuffer);
+                const form = tempDoc.getForm();
+                const safeSetText = (id, val) => { try { const field = form.getTextField(id); if(field) field.setText(val); } catch(e) {} };
+                
+                safeSetText('field_adr_sender', document.getElementById('active_sender').value);
+                safeSetText('field_adr_consignee', document.getElementById('active_consignee').value);
+                safeSetText('field_adr_carrier', document.getElementById('active_carrier').value);
+                safeSetText('field_adr_ref', document.getElementById('ref_no').value);
+                safeSetText('field_plates', document.getElementById('vehicle_plates').value);
+                safeSetText('field_adr_office_place', document.getElementById('office_place').value);
+                safeSetText('field_adr_office_date', fDate);
+                safeSetText('field_adr_office_username', document.getElementById('office_agent').value);
+                safeSetText('field_adr_loader_username', document.getElementById('loader_agent').value);
+                safeSetText('field_adr_page', `Page ${p + 1} / ${totalPagesNeeded}`);
+                safeSetText('field_adr_company', document.getElementById('office_company').value);
+
+                if (hasSigned) {
+                    try {
+                        const sigEmbed = await tempDoc.embedPng(await fetch(canvas.toDataURL()).then(r => r.arrayBuffer()));
+                        const sigField = form.getButton('field_adr_office_signature'); 
+                        if(sigField) sigField.setImage(sigEmbed);
+                    } catch(e) {}
+                }
+
+                for (let c = 0; c <= 4; c++) {
+                    if (catTotals[c] > 0) {
+                        if (c === 0) {
+                            safeSetText('field_adr_cat0', `1.1.3.6: Transport category 0: ${catTotals[0].toFixed(3)} = NO EXEMPTION`);
+                        } else {
+                            let mult = c === 1 ? 50 : (c === 2 ? 3 : (c === 3 ? 1 : 0));
+                            let pts = Math.ceil(catTotals[c] * mult);
+                            safeSetText(`field_adr_cat${c}`, `1.1.3.6: Transport category ${c}: ${catTotals[c].toFixed(3)} (x ${mult}) = ${pts} pts`);
+                        }
+                    }
+                }
+
+                safeSetText('field_total_points', currentPoints.toString());
+                safeSetText('field_adr_tunnel', finalTunnel);
+                
+                let legalText = isFullADR 
+                    ? "Transport exceeding the thresholds set in ADR subsection 1.1.3.6. The driver carries the written instructions. The load is properly stowed and secured in accordance with ADR subsection 7.5.7. Orange-coloured warning plates must be displayed on the vehicle." 
+                    : "Transport without exceeding the thresholds set in ADR subsection 1.1.3.6. The driver carries the written instructions. The load is properly stowed and secured in accordance with ADR subsection 7.5.7.";
+                safeSetText('field_adr_zusatz', legalText);
+
+                for (let i = 0; i < itemsPerPage; i++) {
+                    const lineIdx = (p * itemsPerPage) + i;
+                    if (lineIdx < printLines.length) { safeSetText(`adr_line_${i + 1}`, printLines[lineIdx]); }
+                }
+
+                form.flatten();
+                const [copiedPage] = await outputPdfDoc.copyPages(tempDoc, [0]);
+                outputPdfDoc.addPage(copiedPage);
+            }
+
+            if (chkFileInput.files.length > 0) {
+                const chkFile = chkFileInput.files[0];
+                const chkBuffer = await chkFile.arrayBuffer();
+                const chkDoc = await PDFLib.PDFDocument.load(chkBuffer);
+                const chkForm = chkDoc.getForm();
+                const safeSetChkText = (id, val) => { try { const field = chkForm.getTextField(id); if(field) field.setText(val); } catch(e) {} };
+
+                const inlinePlates = document.getElementById('vehicle_plates').value.replace(/\n/g, ' / ');
+                const fullCarrierText = document.getElementById('active_carrier').value;
+                const firstLineCarrier = fullCarrierText.split('\n')[0];
+
+                safeSetChkText('field_adr_ref', document.getElementById('ref_no').value);
+                safeSetChkText('field_adr_office_date', fDate);
+                safeSetChkText('field_adr_office_place', document.getElementById('office_place').value);
+                safeSetChkText('field_adr_office_username', document.getElementById('office_agent').value);
+                safeSetChkText('field_adr_carrier', firstLineCarrier); 
+                safeSetChkText('field_plates', inlinePlates);
+
+                const checklistNames = ['chk_1', 'chk_2', 'chk_3', 'chk_4', 'chk_5', 'chk_6', 'chk_7', 'chk_8', 'chk_9', 'chk_9a', 'chk_10', 'chk_10a', 'chk_10b', 'chk_10c', 'chk_10d', 'chk_10e', 'chk_11', 'chk_12'];
+                for(let q of checklistNames) {
+                    const checkedOption = document.querySelector(`input[name="${q}"]:checked`);
+                    if(checkedOption) {
+                        try {
+                            const checkboxField = chkForm.getCheckBox(`${q}_${checkedOption.value}`);
+                            if(checkboxField) checkboxField.check();
+                        } catch(e) {}
+                    }
+                }
+
+                if (hasSigned) {
+                    try {
+                        const sigEmbed = await chkDoc.embedPng(await fetch(canvas.toDataURL()).then(r => r.arrayBuffer()));
+                        const sigField = chkForm.getButton('sig_employee'); 
+                        if(sigField) sigField.setImage(sigEmbed);
+                    } catch(e) {}
+                }
+
+                chkForm.flatten();
+                const [chkPage] = await outputPdfDoc.copyPages(chkDoc, [0]);
+                outputPdfDoc.addPage(chkPage);
+            }
+
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(new Blob([await outputPdfDoc.save()], { type: "application/pdf" }));
+            link.download = `${document.getElementById('ref_no').value || 'ADR_Combined'}_FINAL.pdf`;
+            link.click();
+            showToast("PDF Generated Successfully!");
+
+        } catch (e) {
+            console.error(e); showToast("Error generating PDF", "error");
+        } finally {
+            btnEl.innerText = "🚀 Generate PDF"; btnEl.disabled = false;
+        }
+    }
+
+    window.onload = () => { 
+        document.querySelector('.row-group').innerHTML = getGroupOptionsHTML();
+        initTheme(); initializeDefaultData(); initDatalist(); updateCustomUNSelector(); updatePackagingUI(); loadAddressBooks(); 
+        updateTotals();
+        registerPWA();
+    };
+
+    // ── EXPORT / IMPORT DE DATOS ──────────────────────────────────────────────
+
+    function exportData() {
+        const data = {};
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key.startsWith('adr_')) {
+                try { data[key] = JSON.parse(localStorage.getItem(key)); }
+                catch(e) { data[key] = localStorage.getItem(key); }
+            }
+        }
+        const json = JSON.stringify(data, null, 2);
+        const blob = new Blob([json], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `ADR_Backup_${new Date().toISOString().split('T')[0]}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast('✅ Data exported successfully!', 'success');
+    }
+
+    function importData(input) {
+        const file = input.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const data = JSON.parse(e.target.result);
+                let count = 0;
+                for (const [key, value] of Object.entries(data)) {
+                    if (key.startsWith('adr_')) {
+                        localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
+                        count++;
+                    }
+                }
+                showToast(`✅ Imported ${count} data entries. Reloading...`, 'success');
+                setTimeout(() => location.reload(), 1500);
+            } catch(err) {
+                showToast('❌ Invalid backup file. Please use a valid ADR backup JSON.', 'error');
+            }
+        };
+        reader.readAsText(file);
+        input.value = ''; // reset so same file can be re-imported
+    }
+
+    // ── PWA — REGISTRO DEL SERVICE WORKER ────────────────────────────────────
+
+    function registerPWA() {
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('./sw_adr.js')
+                .then(() => console.log('ADR Tool: Service Worker registered'))
+                .catch(err => console.warn('SW registration failed:', err));
+        }
+    }
+
+</script>
+
+</body>
+</html>

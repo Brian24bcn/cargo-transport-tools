@@ -1,0 +1,20 @@
+{
+  "name": "ADR Transport Tool",
+  "short_name": "ADR Tool",
+  "description": "Offline ADR dangerous goods transport document generator. Calculates exemption points (1.1.3.6) and generates PDF transport documents.",
+  "start_url": "./ADR_Generator_v4.html",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#121214",
+  "theme_color": "#3b82f6",
+  "lang": "en",
+  "categories": ["productivity", "utilities"],
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%233b82f6'/><text y='.9em' font-size='75' x='12'>📋</text></svg>",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
